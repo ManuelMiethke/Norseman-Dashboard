@@ -108,7 +108,7 @@ streamlit run dashboard/main.py
 ```
 
 **Note:**  
-`dashboard/main.py` is currently empty.  
+`dashboard/main.py` is currently empty. When you start the App it will be black in the main page. 
 Navigation is handled via the Streamlit sidebar.  
 A dedicated landing page can be added later if required.
 
