@@ -1,41 +1,44 @@
-# Norseman Black‑Shirt Dashboard (Streamlit)
+# Norseman Black-Shirt Dashboard (Streamlit)
 
-Interaktives **Streamlit-Dashboard** zur Analyse von Leistungsdaten des **Norseman Xtreme Triathlon (NXTRI)** – inkl. Overview, Pacing/Elevation, Modell‑Vorhersagen  und Tools.
+An interactive **Streamlit dashboard** for analyzing performance data from the **Norseman Xtreme Triathlon (NXTRI)**, with a particular focus on pacing strategies, elevation effects, predictive modeling, and Black-Shirt qualification.
 
 ---
 
 ## Features
 
-- **Overview**
-  - Teilnehmer- und Ergebnis-Überblicke
-  - Zeit-/Split-Relationen
-  - Histogramme & Rangverläufe
-  - Jahresvergleiche
-- **Pacing & Elevation**
-  - Wetter vs. Speed
-  - Akkumulierte Zeiten/Segmente
-  - Pace-Tabellen & Boxplots
-  - Pacing-Heatmap entlang der Strecke
-- **Prediction**
-  - Modellgüte (Accuracy / Fehleranalysen)
-  - **Black‑Shirt‑Probability** entlang der Renndistanz
-- **Tools**
-  - Empirische Pace-Rechner (z. B. Zielzeit 13:51)
-  - „Catch‑Up“-Szenarien / Aufholrechner
+### Overview
+- Participant and result overviews  
+- Time and split relationships  
+- Histograms and ranking progressions  
+- Year-to-year comparisons  
+
+### Pacing & Elevation
+- Weather vs. speed analysis  
+- Cumulative times and segment breakdowns  
+- Pace tables and boxplots  
+- Pacing heatmap along the race course  
+
+### Prediction
+- Model performance evaluation (accuracy and error analysis)  
+- **Black-Shirt probability** along the race distance  
+
+### Tools
+- Empirical pace calculators (e.g. target finish time 13:51)  
+- “Catch-up” scenarios and overtaking calculators  
 
 ---
 
-## Projektstruktur
+## Project Structure
 
 ```text
 Norseman_Bachelor_Dashboard_only/
 └─ dashboard/
-   ├─ pages/                    # Streamlit Multi‑Page Apps (Seiten)
+   ├─ pages/                    # Streamlit multi-page applications
    │  ├─ 01_Overview.py
    │  ├─ 02_Pacing_&_Course.py
    │  ├─ 03_Model Predictions.py
    │  └─ 04_Tools.py
-   ├─ modules/                  # Wiederverwendbare Visualisierungs-/Logikmodule
+   ├─ modules/                  # Reusable visualization and logic modules
    │  ├─ participants.py
    │  ├─ timerelations.py
    │  ├─ histograms.py
@@ -45,25 +48,25 @@ Norseman_Bachelor_Dashboard_only/
    │  ├─ modelaccuracy.py
    │  ├─ catchup.py
    │  └─ empirical_pace.py
-   ├─ assets/                   # Daten & statische Assets
+   ├─ assets/                   # Data and static assets
    │  ├─ nxtri_data_all_years.csv
    │  ├─ nxtri_data_all_years_long_ready_featured.csv
    │  ├─ xgb_black_probs_long_with_errors.csv
    │  ├─ course_profile.csv
    │  └─ logos/
-   ├─ data_store.py             # Zentrale Datenlade-/Cache-Schicht (st.cache_data)
-   ├─ layout.py                 # Page-Setup + Global Styles
-   ├─ header.py                 # Filter (Year/Group) + Header
-   ├─ footer.py                 # Footer/Logos/Links
-   └─ main.py                   # (derzeit leer) – typischer Entry‑Point für Streamlit
+   ├─ data_store.py             # Central data loading and caching layer (st.cache_data)
+   ├─ layout.py                 # Page setup and global styles
+   ├─ header.py                 # Global filters (year / group) and header
+   ├─ footer.py                 # Footer, logos, and links
+   └─ main.py                   # Entry point (currently empty)
 ```
 
 ---
 
-## Voraussetzungen
+## Requirements
 
-- Python **3.10+** 
-- Abhängigkeiten (mindestens):
+- Python **3.10+**
+- Required packages:
   - `streamlit`
   - `pandas`
   - `numpy`
@@ -74,21 +77,21 @@ Norseman_Bachelor_Dashboard_only/
 
 ## Installation
 
-### 1) Virtuelle Umgebung anlegen 
+### 1. Create a virtual environment
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate  # Windows PowerShell
+.venv\Scripts\activate   # Windows PowerShell
 ```
 
-### 2) Dependencies installieren
+### 2. Install dependencies
 
 ```bash
 pip install -U pip
 pip install streamlit pandas numpy plotly pillow
 ```
 
-Optional: Erzeuge ein `requirements.txt`:
+Optional: generate a `requirements.txt` file
 
 ```bash
 pip freeze > requirements.txt
@@ -96,37 +99,35 @@ pip freeze > requirements.txt
 
 ---
 
-## App starten
+## Running the App
 
-Das Projekt ist als **Streamlit Multi‑Page App** aufgebaut (`dashboard/pages/`).
-
-###  Start ( `dashboard/main.py` als Entry‑Point genutzt)
+The project is implemented as a **Streamlit multi-page application** using `dashboard/pages/`.
 
 ```bash
 streamlit run dashboard/main.py
 ```
 
-> **Wichtig:** In der aktuell ist `dashboard/main.py` leer.  
-> Seitenliste in der Sidebar nutzen,
- `main.py` als Landing‑Page sollte noch befüllt werden 
+**Note:**  
+`dashboard/main.py` is currently empty.  
+Navigation is handled via the Streamlit sidebar.  
+A dedicated landing page can be added later if required.
 
 ---
 
-## Daten
+## Data
 
-Die App lädt CSVs aus `dashboard/assets/` über `dashboard/data_store.py` (mit `st.cache_data`):
+CSV files are loaded from `dashboard/assets/` via `dashboard/data_store.py` using `st.cache_data`:
 
-- `nxtri_data_all_years_long_ready_featured.csv` – Long-Format (Hauptdaten)
-- `nxtri_data_all_years.csv` – Wide/Alternative
-- `xgb_black_probs_long_with_errors.csv` – Modell-Output (Black‑Shirt‑Probs)
-- `course_profile.csv` – Streckenprofil
-
----
-
-## Entwicklung
-
-- Neue Seite: Datei in `dashboard/pages/` anlegen (Nummerierung steuert Reihenfolge).
-- Wiederverwendbare Visuals/Logik: in `dashboard/modules/`.
-- Gemeinsame Datenzugriffe: über `dashboard/data_store.py`.
+- `nxtri_data_all_years_long_ready_featured.csv` – main dataset (long format)  
+- `nxtri_data_all_years.csv` – alternative / wide format  
+- `xgb_black_probs_long_with_errors.csv` – model output (Black-Shirt probabilities)  
+- `course_profile.csv` – course elevation profile  
 
 ---
+
+## Development Notes
+
+- Add new pages by creating files in `dashboard/pages/`  
+  (file numbering controls the sidebar order).
+- Place reusable visualizations and logic in `dashboard/modules/`.
+- All shared data access should go through `dashboard/data_store.py`.
