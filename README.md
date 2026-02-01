@@ -20,15 +20,14 @@ Empirical pace calculators (e.g. target time 13:51)
 “Catch-up” scenarios / overtaking calculators
 
 
-Project Structure
 Norseman_Bachelor_Dashboard_only/
 └─ dashboard/
-   ├─ pages/                    # Streamlit multi-page apps (pages)
+   ├─ pages/                    # Streamlit Multi‑Page Apps Pages
    │  ├─ 01_Overview.py
    │  ├─ 02_Pacing_&_Course.py
    │  ├─ 03_Model Predictions.py
    │  └─ 04_Tools.py
-   ├─ modules/                  # Reusable visualization / logic modules
+   ├─ modules/                  # reusable Diagram modules
    │  ├─ participants.py
    │  ├─ timerelations.py
    │  ├─ histograms.py
@@ -38,17 +37,17 @@ Norseman_Bachelor_Dashboard_only/
    │  ├─ modelaccuracy.py
    │  ├─ catchup.py
    │  └─ empirical_pace.py
-   ├─ assets/                   # Data & static assets
+   ├─ assets/                   # Data and static assets
    │  ├─ nxtri_data_all_years.csv
    │  ├─ nxtri_data_all_years_long_ready_featured.csv
    │  ├─ xgb_black_probs_long_with_errors.csv
    │  ├─ course_profile.csv
    │  └─ logos/
-   ├─ data_store.py             # Central data loading / caching layer (st.cache_data)
-   ├─ layout.py                 # Page setup + global styles
-   ├─ header.py                 # Filters (year / group) + header
-   ├─ footer.py                 # Footer / logos / links
-   └─ main.py                   # (currently empty) – typical Streamlit entry point
+   ├─ data_store.py             # Data (st.cache_data)
+   ├─ layout.py                 # Page-Setup + Global Styles
+   ├─ header.py                 # Header
+   ├─ footer.py                 # Footer
+   └─ main.py                   # empty right now–  Entry‑Point for Streamlit
    
 Requirements:
 Python 3.10+
