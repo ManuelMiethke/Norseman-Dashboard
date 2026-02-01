@@ -46,7 +46,7 @@ Norseman_Bachelor_Dashboard_only/
    │  ├─ weatherspeed.py
    │  ├─ blackshirt_prob.py
    │  ├─ modelaccuracy.py
-   │  ├─ catchup.py
+   │  ├─ what_are_the_odds.py
    │  └─ empirical_pace.py
    ├─ assets/                   # Data and static assets
    │  ├─ nxtri_data_all_years.csv
