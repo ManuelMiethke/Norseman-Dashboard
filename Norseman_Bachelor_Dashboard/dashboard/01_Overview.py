@@ -16,4 +16,4 @@ rangverlauf_gesamt.render_rank_progression_all_athletes()
 whoareweracing.render_who_are_we_racing(df_long)
 
 
-footer.footer()
+#footer.footer()
