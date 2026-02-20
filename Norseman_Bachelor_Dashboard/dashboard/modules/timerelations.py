@@ -92,7 +92,7 @@ def load_wide_for_timerelations() -> pd.DataFrame:
     - Top10_flag
     """
     df = pd.read_csv(
-        "/Users/manuelmiethke/Norseman_Bachelor/old_data/old_master_data_excel/nxtri_data_all_years.csv"
+        "Norseman_Bachelor_Dashboard/dashboard/assets/nxtri_data_all_years.csv"
     )
 
     df["swim_time_s"] = df["swim_time"].apply(time_to_seconds)

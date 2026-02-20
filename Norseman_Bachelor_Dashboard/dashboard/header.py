@@ -35,6 +35,6 @@ def render_header():
         )
 
     with col_logo:
-        st.image("dashboard/assets/logos/black-shirt_icon.jpg", width=110)
+        st.image("Norseman_Bachelor_Dashboard/dashboard/assets/logos/black-shirt_icon.jpg", width=110)
 
     return selected_year, selected_group

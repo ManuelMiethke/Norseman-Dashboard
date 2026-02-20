@@ -4,8 +4,11 @@ import streamlit as st
 
 # ------------------------------------------------------------
 # Paths
-# ------------------------------------------------------------
-DASHBOARD_DIR = Path(__file__).resolve().parent
+# -----------------------------------------------------------
+
+# Suche nach dem Ordner "dashboard" in der Pfad-Hierarchie
+p = Path(__file__).resolve()
+DASHBOARD_DIR = next(parent for parent in p.parents if parent.name == "dashboard")
 
 ASSETS_DIR = DASHBOARD_DIR / "assets"
 
