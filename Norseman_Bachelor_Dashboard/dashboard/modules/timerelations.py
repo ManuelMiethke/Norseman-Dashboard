@@ -2,6 +2,7 @@
 
 import math
 from typing import List, Optional
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -27,6 +28,7 @@ SEGMENT_COLORS = {
 
 BACKGROUND_DARK = "#7A7A7A"
 TEXT_COLOR = "#ffffff"
+DATA_PATH = Path(__file__).resolve().parents[1] / "assets" / "nxtri_data_all_years.csv"
 
 # Farben für Überschriften
 TOP10_BG = "#b7ffb7"
@@ -92,7 +94,7 @@ def load_wide_for_timerelations() -> pd.DataFrame:
     - Top10_flag
     """
     df = pd.read_csv(
-        "Norseman_Bachelor_Dashboard/dashboard/assets/nxtri_data_all_years.csv"
+        DATA_PATH
     )
 
     df["swim_time_s"] = df["swim_time"].apply(time_to_seconds)

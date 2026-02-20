@@ -104,14 +104,8 @@ pip freeze > requirements.txt
 The project is implemented as a **Streamlit multi-page application** using `dashboard/pages/`.
 
 ```bash
-streamlit run dashboard/main.py
+streamlit run Norseman_Bachelor_Dashboard/dashboard/01_Overview.py
 ```
-
-**Note:**  
-`dashboard/main.py` is currently empty. When you start the App it will be black in the main page. 
-Navigation is handled via the Streamlit sidebar.  
-A dedicated landing page can be added later if required.
-
 ---
 
 ## Data

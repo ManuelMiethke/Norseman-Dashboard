@@ -1,4 +1,8 @@
 import streamlit as st
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+LOGO_PATH = BASE_DIR / "assets" / "logos" / "black-shirt_icon.jpg"
 
 def render_header():
     # Optionen
@@ -35,6 +39,6 @@ def render_header():
         )
 
     with col_logo:
-        st.image("Norseman_Bachelor_Dashboard/dashboard/assets/logos/black-shirt_icon.jpg", width=110)
+        st.image(str(LOGO_PATH), width=110)
 
     return selected_year, selected_group

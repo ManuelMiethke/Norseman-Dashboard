@@ -1,8 +1,11 @@
 import streamlit as st
 from PIL import Image
+from pathlib import Path
 
-NORSEMAN_LOGO_PATH = "/Users/manuelmiethke/Norseman_Bachelor_Dashboard_only/dashboard/assets/logos/black-shirt_icon.jpg"
-HDM_LOGO_PATH = "/Users/manuelmiethke/Norseman_Bachelor/dashboard/assets/logos/HdM_logo.png"
+BASE_DIR = Path(__file__).resolve().parent
+ASSETS_DIR = BASE_DIR / "assets" / "logos"
+NORSEMAN_LOGO_PATH = ASSETS_DIR / "black-shirt_icon.jpg"
+HDM_LOGO_PATH = ASSETS_DIR / "HdM_logo.png"
 
 
 def footer() -> None:
