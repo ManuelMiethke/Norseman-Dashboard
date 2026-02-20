@@ -127,8 +127,7 @@ def render_blackshirt_probability(selected_year="All", selected_group="All"):
     last_split = df_sorted.groupby(group_keys).tail(1)
     top10_keys = last_split[last_split["split_rank"] <= 10][group_keys]
     df = df.merge(top10_keys.assign(is_top10=True), on=group_keys, how="left")
-    df["is_top10"] = df["is_top10"].fillna(False)
-
+    df["is_top10"] = (df["is_top10"].fillna(False).infer_objects(copy=False))
     # ============================
     # Gruppen-Logik
     # ============================

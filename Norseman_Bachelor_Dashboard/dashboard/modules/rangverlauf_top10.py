@@ -360,7 +360,7 @@ This visualization shows how the **Top 10** athletes **race positions (ranks)** 
 - Compare tactical patterns and turning points **across different years**.
             """)
 
-    df_year = load_long_data().query("year == @year")
+    df_year = load_long_data().query("year == @year", engine="python")
 
     # Checkbox 
     focus_top10 = st.checkbox("Focus on 10 places", value=True)

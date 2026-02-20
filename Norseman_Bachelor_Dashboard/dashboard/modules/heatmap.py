@@ -171,7 +171,7 @@ This heatmap shows, for each timing station (**split**), how much faster or slow
     d["segment_time_s"] = pd.to_numeric(d["segment_time_s"], errors="coerce").astype(float)
 
     # Δ Zeit (%) vs Median 
-    median_t = d.groupby("split_key")["segment_time_s"].transform("median")
+    median_t = d.groupby("split_key", observed=False)["segment_time_s"].transform("median")
     denom = median_t.replace(0, np.nan)
     d["delta_pct"] = (d["segment_time_s"] - median_t) / denom * 100.0
 
