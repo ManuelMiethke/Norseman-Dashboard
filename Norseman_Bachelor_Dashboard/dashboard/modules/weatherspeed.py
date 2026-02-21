@@ -576,6 +576,7 @@ def build_weatherspeed_figure(
     speed_df: pd.DataFrame,
     groups_to_plot: list[str],
     split_dist_map: dict[str, float] | None = None,  
+    run_focus: bool = False,
 ) -> go.Figure:
 
     # --- Ensure numeric ---
@@ -686,6 +687,10 @@ def build_weatherspeed_figure(
             return f"{(d - swim_end):g}"
         return f"{(d - bike_end):g}"
 
+    def is_run_key(key: str) -> bool:
+        k = str(key)
+        return k.startswith("run_") or k in {"finish_black_t_shirt", "finish_white_t_shirt"}
+
     fig = make_subplots(specs=[[{"secondary_y": True}]], rows=1, cols=1, shared_xaxes=True)
 
     # ---------------------------------------------------------------
@@ -715,8 +720,8 @@ def build_weatherspeed_figure(
                 y=course_df[COL_ELEV_HAWAII],
                 name="Ironman Hawaii elevation",
                 mode="lines",
-                line=dict(width=2, dash="dash"),
-                opacity=0.99,
+                line=dict(width=2, dash="dash", color="#FF2F00"),
+                opacity=0.95,
                 hovertemplate="Hawaii km %{x:.1f}<br>Elev: %{y:.0f} m<extra></extra>",
             ),
             row=1, col=1, secondary_y=True,
@@ -858,12 +863,61 @@ def build_weatherspeed_figure(
         key=lambda g: preferred_order.index(g) if g in preferred_order else len(preferred_order),
     )
 
-    group_offsets = {
-        GROUP_TOP10: 0.35,
-        GROUP_BLACK: -0.35,
-        GROUP_WHITE: 0.0,
-        GROUP_CRITICAL: 0.12,
-    }
+    # Segment comparison vs Black Shirt (for hover):
+    # Top10 vs Black: positive means faster
+    # White vs Black: negative means slower
+    compare_piv = (
+        speed_df.groupby(["segment_end_key", COL_GROUP], as_index=False)[COL_SPEED]
+        .median()
+        .pivot(index="segment_end_key", columns=COL_GROUP, values=COL_SPEED)
+    ) if not speed_df.empty else pd.DataFrame()
+
+    top_vs_black_txt = {}
+    white_vs_black_txt = {}
+    if not compare_piv.empty and GROUP_BLACK in compare_piv.columns:
+        for seg_end, row in compare_piv.iterrows():
+            v_black = row.get(GROUP_BLACK, np.nan)
+            if pd.isna(v_black) or float(v_black) <= 0:
+                top_vs_black_txt[str(seg_end)] = "n/a"
+                white_vs_black_txt[str(seg_end)] = "n/a"
+                continue
+
+            v_top = row.get(GROUP_TOP10, np.nan)
+            v_white = row.get(GROUP_WHITE, np.nan)
+
+            if pd.notna(v_top):
+                d_top = (float(v_top) - float(v_black)) / float(v_black) * 100.0
+                top_vs_black_txt[str(seg_end)] = f"{d_top:+.1f}%"
+            else:
+                top_vs_black_txt[str(seg_end)] = "n/a"
+
+            if pd.notna(v_white):
+                d_white = (float(v_white) - float(v_black)) / float(v_black) * 100.0
+                white_vs_black_txt[str(seg_end)] = f"{d_white:+.1f}%"
+            else:
+                white_vs_black_txt[str(seg_end)] = "n/a"
+    else:
+        for seg_end in speed_df["segment_end_key"].astype(str).unique():
+            top_vs_black_txt[str(seg_end)] = "n/a"
+            white_vs_black_txt[str(seg_end)] = "n/a"
+
+    group_offsets = (
+        {
+            GROUP_TOP10: -0.08,
+            GROUP_BLACK: 0.0,
+            GROUP_WHITE: 0.08,
+            GROUP_CRITICAL: 0.04,
+        }
+        if run_focus
+        else {
+            GROUP_TOP10: 0.35,
+            GROUP_BLACK: -0.35,
+            GROUP_WHITE: 0.0,
+            GROUP_CRITICAL: 0.12,
+        }
+    )
+
+    run_pace_values = []
 
     for group in plot_groups:
         df_g = speed_df[speed_df[COL_GROUP] == group].copy()
@@ -872,6 +926,10 @@ def build_weatherspeed_figure(
 
         df_g["_ord"] = pd.Categorical(df_g["segment_end_key"], ORDERED_SPLIT_KEYS, ordered=True)
         df_g = df_g.sort_values("_ord").reset_index(drop=True)
+        if run_focus:
+            df_g = df_g[df_g["segment_end_key"].apply(is_run_key)].copy()
+            if df_g.empty:
+                continue
 
         x_line, y_line, hover_vals = [], [], []
         y_offset = group_offsets.get(group, 0.0)
@@ -893,11 +951,59 @@ def build_weatherspeed_figure(
                 continue
 
             v_real = float(v)
-            y = v_real + y_offset
+            if run_focus:
+                if v_real <= 0:
+                    continue
+                pace_min_per_km = 60.0 / v_real
+                y = pace_min_per_km + y_offset
+                run_pace_values.append(pace_min_per_km)
+            else:
+                y = v_real + y_offset
+            top_txt = top_vs_black_txt.get(ek, "n/a")
+            white_txt = white_vs_black_txt.get(ek, "n/a")
 
             x_line += [float(x0), float(x1), None]
             y_line += [y, y, None]
-            hover_vals += [v_real, v_real, None]
+            hover_vals += [
+                    [v_real, top_txt, white_txt],
+                    [v_real, top_txt, white_txt],
+                    [None, "", ""],
+                ]
+
+        hovertemplate = f"{group}<br>v = %{{customdata[0]:.1f}} km/h<extra></extra>"
+        if group == GROUP_BLACK:
+            hovertemplate = (
+                f"{group}<br>"
+                "v = %{customdata[0]:.1f} km/h<br>"
+                "Top10 vs Black: %{customdata[1]}<br>"
+                "White vs Black: %{customdata[2]}<extra></extra>"
+            )
+        if run_focus:
+            hovertemplate = f"{group}<br>Pace = %{{y:.2f}} min/km<br>v = %{{customdata[0]:.1f}} km/h<extra></extra>"
+            if group == GROUP_BLACK:
+                hovertemplate = (
+                    f"{group}<br>"
+                    "Pace = %{y:.2f} min/km<br>"
+                    "v = %{customdata[0]:.1f} km/h<br>"
+                    "Top10 vs Black: %{customdata[1]}<br>"
+                    "White vs Black: %{customdata[2]}<extra></extra>"
+                )
+
+        # Add subtle white underlay for black group so it stays visible on dark background.
+        if group == GROUP_BLACK:
+            fig.add_trace(
+                go.Scatter(
+                    x=x_line,
+                    y=y_line,
+                    customdata=hover_vals,
+                    mode="lines",
+                    name=f"{group} median speed",
+                    line=dict(width=8, color="rgba(255,255,255,0.55)"),
+                    hoverinfo="skip",
+                    showlegend=False,
+                ),
+                row=1, col=1, secondary_y=False,
+            )
 
         fig.add_trace(
             go.Scatter(
@@ -907,7 +1013,7 @@ def build_weatherspeed_figure(
                 mode="lines",
                 name=f"{group} median speed",
                 line=dict(width=5, color=color_map.get(group, None)),
-                hovertemplate=f"{group}<br>v = %{{customdata:.1f}} km/h<extra></extra>",
+                hovertemplate=hovertemplate,
             ),
             row=1, col=1, secondary_y=False,
         )
@@ -923,19 +1029,34 @@ def build_weatherspeed_figure(
     # ---------------------------------------------------------------
     # Axes & layout
     # ---------------------------------------------------------------
-    speed_ticks = list(range(0, 71, 10))  # 0,10,...,70  -> 7 ticks (7 Intervalle)
-
-    fig.update_yaxes(
-        title_text="Speed (km/h)",
-        secondary_y=False,
-        range=[0, 70],
-        tickmode="array",
-        tickvals=speed_ticks,
-        showgrid=True,
-        zeroline=False,
-        title_font=dict(size=22),
-        tickfont=dict(size=14),
-    )
+    if run_focus:
+        if run_pace_values:
+            p_min = max(2.5, float(np.nanmin(run_pace_values)) - 0.4)
+            p_max = min(12.0, float(np.nanmax(run_pace_values)) + 0.4)
+        else:
+            p_min, p_max = 3.0, 9.0
+        fig.update_yaxes(
+            title_text="Pace (min/km)",
+            secondary_y=False,
+            range=[p_max, p_min],
+            showgrid=True,
+            zeroline=False,
+            title_font=dict(size=22),
+            tickfont=dict(size=14),
+        )
+    else:
+        speed_ticks = list(range(0, 71, 10))  # 0,10,...,70  -> 7 ticks (7 Intervalle)
+        fig.update_yaxes(
+            title_text="Speed (km/h)",
+            secondary_y=False,
+            range=[0, 70],
+            tickmode="array",
+            tickvals=speed_ticks,
+            showgrid=True,
+            zeroline=False,
+            title_font=dict(size=22),
+            tickfont=dict(size=14),
+        )
 
     # --- RIGHT (Elevation): NO gridlines at all ---
     fig.update_yaxes(
@@ -982,22 +1103,38 @@ def build_weatherspeed_figure(
     tickvals = [p[0] for p in pairs]
     ticktext = [p[1] for p in pairs]
 
-    fig.update_xaxes(
-        title_text="Distance (km)",
-        range=[0, x_max],
-        tickmode="array",
-        tickvals=tickvals,
-        ticktext=ticktext,
-        title_font=dict(size=22),
-        tickfont=dict(size=14),
-    )
+    if run_focus:
+        run_tickvals, run_ticktext = [], []
+        for xv, txt in zip(tickvals, ticktext):
+            if run_offset - 1e-6 <= float(xv) <= (run_offset + RUN_KM + 1e-6):
+                run_tickvals.append(float(xv))
+                run_ticktext.append(txt)
+        fig.update_xaxes(
+            title_text="Run distance (km)",
+            range=[run_offset, run_offset + RUN_KM],
+            tickmode="array",
+            tickvals=run_tickvals,
+            ticktext=run_ticktext,
+            title_font=dict(size=22),
+            tickfont=dict(size=14),
+        )
+    else:
+        fig.update_xaxes(
+            title_text="Distance (km)",
+            range=[0, x_max],
+            tickmode="array",
+            tickvals=tickvals,
+            ticktext=ticktext,
+            title_font=dict(size=22),
+            tickfont=dict(size=14),
+        )
 
     fig.update_layout(
         template="plotly_dark",
         paper_bgcolor="#7A7A7A",
         plot_bgcolor="#7A7A7A",
         margin=dict(l=50, r=120, t=110, b=60),
-        height=560,
+        height=760 if run_focus else 560,
         legend=dict(
             orientation="v",
             yanchor="top",
@@ -1008,38 +1145,55 @@ def build_weatherspeed_figure(
             font=dict(size=28),
         ),
         hovermode="x unified",
-        annotations=list(fig.layout.annotations) + [
-            dict(
-                x=SWIM_KM / 2,
-                y=1.26,
-                xref="x",
-                yref="paper",
-                text="Swim",
-                showarrow=False,
-                font=dict(color="white", size=20),
-                xanchor="center",
-            ),
-            dict(
-                x=bike_offset + BIKE_KM / 2,
-                y=1.26,
-                xref="x",
-                yref="paper",
-                text="Bike",
-                showarrow=False,
-                font=dict(color="white", size=20),
-                xanchor="center",
-            ),
-            dict(
-                x=run_offset + RUN_KM / 2,
-                y=1.26,
-                xref="x",
-                yref="paper",
-                text="Run",
-                showarrow=False,
-                font=dict(color="white", size=20),
-                xanchor="center",
-            ),
-        ],
+        annotations=(
+            list(fig.layout.annotations)
+            + [
+                dict(
+                    x=run_offset + RUN_KM / 2,
+                    y=1.26,
+                    xref="x",
+                    yref="paper",
+                    text="Run",
+                    showarrow=False,
+                    font=dict(color="white", size=20),
+                    xanchor="center",
+                )
+            ]
+            if run_focus
+            else list(fig.layout.annotations)
+            + [
+                dict(
+                    x=SWIM_KM / 2,
+                    y=1.26,
+                    xref="x",
+                    yref="paper",
+                    text="Swim",
+                    showarrow=False,
+                    font=dict(color="white", size=20),
+                    xanchor="center",
+                ),
+                dict(
+                    x=bike_offset + BIKE_KM / 2,
+                    y=1.26,
+                    xref="x",
+                    yref="paper",
+                    text="Bike",
+                    showarrow=False,
+                    font=dict(color="white", size=20),
+                    xanchor="center",
+                ),
+                dict(
+                    x=run_offset + RUN_KM / 2,
+                    y=1.26,
+                    xref="x",
+                    yref="paper",
+                    text="Run",
+                    showarrow=False,
+                    font=dict(color="white", size=20),
+                    xanchor="center",
+                ),
+            ]
+        ),
     )
 
     return fig
@@ -1217,11 +1371,14 @@ This visualization combines **course profile + weather + group median speed** fo
     # --------------------------------------------------
     # Build + render figure
     # --------------------------------------------------
+    run_focus = st.toggle("Run focus", value=False, key="ws_run_focus")
+
     fig = build_weatherspeed_figure(
         course_df,
         weather_df,
         speed_df,
         groups_to_plot,
         split_dist_map=split_dist_map,
+        run_focus=run_focus,
     )
     st.plotly_chart(fig, width="stretch")
