@@ -23,7 +23,7 @@ def footer() -> None:
 
     # Mitte: Last updated
     with col_center:
-        st.markdown("Last updated: **21.12.2025**")
+        st.markdown("Last updated: **21.02.2026**")
 
     # Rechts: Contact (Mailto-Link)
     with col_contact:

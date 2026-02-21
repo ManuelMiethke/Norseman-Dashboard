@@ -3,10 +3,11 @@ import plotly.graph_objects as go
 import pandas as pd
 import math
 import numpy as np
+from utils.race_logic import get_group_color, is_critical_40_group
 
 
 GRAY_BG = "#7A7A7A"
-TOP10_COLOR = "lightgreen"
+TOP10_COLOR = get_group_color("Top 10", scheme="histograms")
 
 TIME_COLUMN_CANDIDATES = {
     "swim": ["swim_time", "SwimTime", "Swim"],
@@ -80,13 +81,13 @@ def build_color_map(unique_vals):
     color_map = {}
     black = pick_label(unique_vals, ["Black Shirt", "Black"])
     if black:
-        color_map[black] = "black"
+        color_map[black] = get_group_color("Black Shirt", scheme="histograms")
     white = pick_label(unique_vals, ["White Shirt", "White"])
     if white:
-        color_map[white] = "white"
+        color_map[white] = get_group_color("White Shirt", scheme="histograms")
     dnf = pick_label(unique_vals, ["DNF", "Dnf", "dnf"])
     if dnf:
-        color_map[dnf] = "red"
+        color_map[dnf] = get_group_color("DNF", scheme="histograms")
     return color_map
 
 
@@ -140,6 +141,9 @@ def apply_header_filters(df, selected_year, selected_group,
     # Group "Top 10"
     if selected_group == "Top 10" and overall_rank_col is not None:
         filtered = filtered[filtered[overall_rank_col] <= 10]
+    elif is_critical_40_group(selected_group) and overall_rank_col is not None:
+        rank = pd.to_numeric(filtered[overall_rank_col], errors="coerce")
+        filtered = filtered[(rank >= 140) & (rank <= 180)]
 
     # Group nach Finish Type (Black/White/DNF)
     if finish_type_col is not None:

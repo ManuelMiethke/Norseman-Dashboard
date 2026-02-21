@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 from pathlib import Path
+from utils.race_logic import get_group_color
 
 # --------------------------------------------------
 # Pfad zur XGBoost-Prognose-Datei
@@ -178,9 +179,9 @@ def render_blackshirt_probability(selected_year="All", selected_group="All"):
     )
 
     color_map = {
-        "Top 10": "#00ff7f",
-        "Black Shirt": "#000000",
-        "White Shirt": "#ffffff",
+        "Top 10": get_group_color("Top 10", scheme="blackshirt_prob"),
+        "Black Shirt": get_group_color("Black Shirt", scheme="blackshirt_prob"),
+        "White Shirt": get_group_color("White Shirt", scheme="blackshirt_prob"),
     }
 
     MEDIAN_COLOR = "#FF8C00"

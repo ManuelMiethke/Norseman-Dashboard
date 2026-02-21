@@ -3,7 +3,13 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-from utils.race_logic import apply_group_filter, apply_year_filter
+from utils.race_logic import (
+    GROUP_CRITICAL_40,
+    apply_group_filter,
+    apply_year_filter,
+    get_group_color,
+    is_critical_40_group,
+)
 
 
 def render(df_long: pd.DataFrame, selected_year, selected_group):
@@ -80,13 +86,13 @@ Tip💡 Click and drag a rectangle with your cursor to zoom in the graph. This c
         # --------------------------------------------------
         # Plot
         # --------------------------------------------------
-        fig = _create_accumulated_figure(df)
+        fig = _create_accumulated_figure(df, selected_group=selected_group)
         st.plotly_chart(fig, width="stretch")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
 
-def _create_accumulated_figure(df: pd.DataFrame) -> go.Figure:
+def _create_accumulated_figure(df: pd.DataFrame, selected_group: str = "All") -> go.Figure:
     df = df.copy()
 
     # ----------------------------
@@ -172,11 +178,15 @@ def _create_accumulated_figure(df: pd.DataFrame) -> go.Figure:
     if "overall_rank" in df.columns:
         df.loc[df["overall_rank"] <= 10, "category"] = "Top10"
 
+    if is_critical_40_group(selected_group):
+        df["category"] = GROUP_CRITICAL_40
+
     color_map = {
-        "DNF": "#FF4B4B",
-        "White": "#FFFFFF",
-        "Black": "#000000",
-        "Top10": "#2ECC71",
+        "DNF": get_group_color("DNF", scheme="accumulated_line"),
+        "White": get_group_color("White Shirt", scheme="accumulated_line"),
+        "Black": get_group_color("Black Shirt", scheme="accumulated_line"),
+        "Top10": get_group_color("Top 10", scheme="accumulated_line"),
+        GROUP_CRITICAL_40: get_group_color(GROUP_CRITICAL_40, scheme="accumulated_line"),
     }
 
     fig = go.Figure()

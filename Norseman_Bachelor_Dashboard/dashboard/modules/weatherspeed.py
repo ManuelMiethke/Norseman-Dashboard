@@ -2,6 +2,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from utils.race_logic import (
+    GROUP_CRITICAL_40,
+    apply_group_filter,
+    get_group_color,
+    is_critical_40_group,
+)
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -50,6 +56,7 @@ GROUP_TOP10 = "Top 10"
 GROUP_BLACK = "Black Shirt"
 GROUP_WHITE = "White Shirt"
 GROUP_DNF = "DNF"
+GROUP_CRITICAL = GROUP_CRITICAL_40
 
 GROUPS_ORDER = [GROUP_TOP10, GROUP_BLACK, GROUP_WHITE]
 COL_GROUP = "group"
@@ -191,19 +198,26 @@ def load_course_profile(path: Path) -> pd.DataFrame:
 
 def ensure_group_column(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-
     df[COL_GROUP] = "Other"
-    finish = df[COL_FINISH_TYPE].astype(str)
 
-    df.loc[finish.str.upper().str.contains("DNF"), COL_GROUP] = GROUP_DNF
+    assign_order = [
+        ("DNF", GROUP_DNF),
+        ("White Shirt", GROUP_WHITE),
+        ("Black Shirt", GROUP_BLACK),
+        ("Top 10", GROUP_TOP10),
+        (GROUP_CRITICAL, GROUP_CRITICAL),
+    ]
 
-    mask_finisher = ~finish.str.upper().str.contains("DNF")
-
-    df.loc[mask_finisher & finish.str.lower().str.contains("black"), COL_GROUP] = GROUP_BLACK
-    df.loc[mask_finisher & finish.str.lower().str.contains("white"), COL_GROUP] = GROUP_WHITE
-
-    ranks = pd.to_numeric(df[COL_OVERALL_RANK], errors="coerce")
-    df.loc[mask_finisher & (ranks <= 10), COL_GROUP] = GROUP_TOP10
+    for source_group, target_group in assign_order:
+        idx = apply_group_filter(
+            df,
+            source_group,
+            finish_col=COL_FINISH_TYPE,
+            rank_col=COL_OVERALL_RANK,
+            top10_col="Top10_flag",
+        ).index
+        if len(idx) > 0:
+            df.loc[idx, COL_GROUP] = target_group
 
     return df
 
@@ -818,9 +832,10 @@ def build_weatherspeed_figure(
     # Speed segments (horizontal per split segment)
     # ---------------------------------------------------------------
     color_map = {
-        GROUP_TOP10: "#00ff00",
-        GROUP_BLACK: "#000000",
-        GROUP_WHITE: "#ffffff",
+        GROUP_TOP10: get_group_color(GROUP_TOP10),
+        GROUP_BLACK: get_group_color(GROUP_BLACK),
+        GROUP_WHITE: get_group_color(GROUP_WHITE),
+        GROUP_CRITICAL: get_group_color(GROUP_CRITICAL),
     }
 
     fig.add_trace(
@@ -837,7 +852,7 @@ def build_weatherspeed_figure(
         row=1, col=1, secondary_y=False,
     )
 
-    preferred_order = [GROUP_WHITE, GROUP_BLACK, GROUP_TOP10]
+    preferred_order = [GROUP_WHITE, GROUP_CRITICAL, GROUP_BLACK, GROUP_TOP10]
     plot_groups = sorted(
         groups_to_plot,
         key=lambda g: preferred_order.index(g) if g in preferred_order else len(preferred_order),
@@ -847,6 +862,7 @@ def build_weatherspeed_figure(
         GROUP_TOP10: 0.35,
         GROUP_BLACK: -0.35,
         GROUP_WHITE: 0.0,
+        GROUP_CRITICAL: 0.12,
     }
 
     for group in plot_groups:
@@ -1085,17 +1101,16 @@ This visualization combines **course profile + weather + group median speed** fo
         return
 
     # --------------------------------------------------
-    # Ensure COL_GROUP exists using the canonical logic in this file
+    # Ensure COL_GROUP is rebuilt using canonical logic (keeps new groups consistent)
     # --------------------------------------------------
-    if COL_GROUP not in long_df.columns:
-        needed = {COL_FINISH_TYPE, COL_OVERALL_RANK}
-        if not needed.issubset(long_df.columns):
-            st.error(
-                f"Cannot build '{COL_GROUP}'. Missing columns: {needed - set(long_df.columns)}\n\n"
-                f"Available columns: {list(long_df.columns)}"
-            )
-            return
-        long_df = ensure_group_column(long_df)
+    needed = {COL_FINISH_TYPE, COL_OVERALL_RANK}
+    if not needed.issubset(long_df.columns):
+        st.error(
+            f"Cannot build '{COL_GROUP}'. Missing columns: {needed - set(long_df.columns)}\n\n"
+            f"Available columns: {list(long_df.columns)}"
+        )
+        return
+    long_df = ensure_group_column(long_df)
 
     # --------------------------------------------------
     # Year selection (from header)
@@ -1112,6 +1127,8 @@ This visualization combines **course profile + weather + group median speed** fo
 
     if selected_group == "All":
         groups_to_plot = [g for g in GROUPS_ORDER if g in available_groups]
+    elif is_critical_40_group(selected_group):
+        groups_to_plot = [GROUP_CRITICAL] if GROUP_CRITICAL in available_groups else []
     elif selected_group == GROUP_DNF:
         groups_to_plot = []
     else:

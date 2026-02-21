@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from utils.race_logic import get_group_color, is_critical_40_group
 
 try:
     import data_store
@@ -88,14 +89,14 @@ def is_white_shirt(finish_type: str) -> bool:
 def athlete_color(finish_type: str, top10_at_cutoff: bool) -> str:
     # Priority: DNF > Top10 > Black > White > fallback
     if is_dnf(finish_type):
-        return "#FF0000" 
+        return get_group_color("DNF", scheme="rank_progression")
     if top10_at_cutoff:
-        return "#00C853"  
+        return get_group_color("Top 10", scheme="rank_progression")
     if is_black_shirt(finish_type):
-        return "#000000"  
+        return get_group_color("Black Shirt", scheme="rank_progression")
     if is_white_shirt(finish_type):
-        return "#FFFFFF"  
-    return "#FFFFFF"
+        return get_group_color("White Shirt", scheme="rank_progression")
+    return get_group_color("White Shirt", scheme="rank_progression")
 
 
 def _get_group_from_session_state() -> str:
@@ -117,6 +118,12 @@ def athlete_in_group(row: pd.Series, group: str) -> bool:
         return is_white_shirt(row.get("finish_type", ""))
     if group == "DNF":
         return is_dnf(row.get("finish_type", ""))
+    if is_critical_40_group(group):
+        try:
+            rank = float(row.get("last_rank_at_cutoff"))
+            return 140 <= rank <= 180
+        except Exception:
+            return False
     return True
 
 
@@ -130,6 +137,7 @@ def create_rank_progression_figure(
 ) -> go.Figure:
     structure = race_structure_for_year(year_int)
     cutoff_km = structure["run_end"]
+    cutoff_tol_km = 0.2
 
     df = df_year[df_year["race_distance_km"] <= cutoff_km].copy()
     if df.empty:
@@ -144,6 +152,37 @@ def create_rank_progression_figure(
         )
         fig.add_annotation(
             text="No data available for this year/cutoff.",
+            x=0.5, y=0.5, xref="paper", yref="paper",
+            showarrow=False,
+            font=dict(size=14, color="#FFFFFF"),
+        )
+        return fig
+
+    # Keep only athletes that actually reached the cut-off distance.
+    max_dist_per_bib = (
+        df_year.groupby("bib", as_index=False)["race_distance_km"]
+        .max()
+        .rename(columns={"race_distance_km": "max_race_distance_km"})
+    )
+    reached_cutoff_bibs = set(
+        max_dist_per_bib.loc[
+            max_dist_per_bib["max_race_distance_km"] >= (cutoff_km - cutoff_tol_km), "bib"
+        ].astype(int)
+    )
+
+    df = df[df["bib"].isin(reached_cutoff_bibs)].copy()
+    if df.empty:
+        fig = go.Figure()
+        fig.update_layout(
+            paper_bgcolor="#7A7A7A",
+            plot_bgcolor="#7A7A7A",
+            font=dict(color="#FFFFFF"),
+            showlegend=False,
+            height=650,
+            margin=dict(l=40, r=20, t=20, b=40),
+        )
+        fig.add_annotation(
+            text="No athletes reached the cut-off for this selection.",
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False,
             font=dict(size=14, color="#FFFFFF"),

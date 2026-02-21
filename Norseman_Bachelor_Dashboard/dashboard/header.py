@@ -1,5 +1,6 @@
 import streamlit as st
 from pathlib import Path
+from utils.race_logic import GROUP_CRITICAL_40
 
 BASE_DIR = Path(__file__).resolve().parent
 LOGO_PATH = BASE_DIR / "assets" / "logos" / "black-shirt_icon.jpg"
@@ -7,7 +8,7 @@ LOGO_PATH = BASE_DIR / "assets" / "logos" / "black-shirt_icon.jpg"
 def render_header():
     # Optionen
     year_options = ["All", 2025, 2024, 2022, 2021, 2019, 2018]
-    group_options = ["All","Top 10", "Black Shirt", "White Shirt", "DNF"]
+    group_options = ["All", "Top 10", "Black Shirt", "White Shirt", GROUP_CRITICAL_40, "DNF"]
 
     col_title, col_year, col_group, col_logo = st.columns([4, 1.3, 1.5, 1])
 

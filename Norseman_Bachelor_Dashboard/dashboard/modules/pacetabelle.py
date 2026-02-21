@@ -2,6 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from utils.race_logic import (
+    GROUP_CRITICAL_40,
+    apply_group_filter,
+    apply_year_filter,
+    get_group_color,
+    get_group_text_color,
+    is_critical_40_group,
+    parse_time_to_seconds,
+)
 
 # --------------------------------------------------
 # Konfiguration
@@ -16,10 +25,7 @@ BG_GRAY = "#7a7a7a"
 GROUP_TOP10 = "Top10"
 GROUP_BLACK = "Black"
 GROUP_WHITE = "White"
-
-COLOR_TOP10 = "#00ff00"
-COLOR_BLACK = "#000000"
-COLOR_WHITE = "#ffffff"
+GROUP_CRITICAL = "Critical 40"
 
 
 # --------------------------------------------------
@@ -27,22 +33,7 @@ COLOR_WHITE = "#ffffff"
 # --------------------------------------------------
 def time_to_seconds(t) -> float:
     """Konvertiert 'h:mm:ss' oder 'mm:ss' in Sekunden."""
-    if pd.isna(t) or t is None or t == "":
-        return np.nan
-    t = str(t).strip()
-    parts = t.split(":")
-
-    try:
-        if len(parts) == 2:  # mm:ss
-            h = 0
-            m, s = parts
-        elif len(parts) == 3:  # h:mm:ss
-            h, m, s = parts
-        else:
-            return np.nan
-        return int(h) * 3600 + int(m) * 60 + int(round(float(s)))
-    except Exception:
-        return np.nan
+    return parse_time_to_seconds(t)
 
 
 def seconds_to_hms(sec: float) -> str:
@@ -202,8 +193,8 @@ def style_stats_table_html(df: pd.DataFrame) -> str:
         styler = styler.set_properties(
             subset=top10_cols,
             **{
-                "background-color": "#b7ffb7",
-                "color": "black !important",
+                "background-color": get_group_color("Top10", scheme="pacetabelle_table"),
+                "color": f"{get_group_text_color('Top10')} !important",
             },
         )
 
@@ -213,8 +204,8 @@ def style_stats_table_html(df: pd.DataFrame) -> str:
         styler = styler.set_properties(
             subset=black_cols,
             **{
-                "background-color": "#000000",
-                "color": "white !important",
+                "background-color": get_group_color("Black", scheme="pacetabelle_table"),
+                "color": f"{get_group_text_color('Black')} !important",
             },
         )
 
@@ -224,8 +215,18 @@ def style_stats_table_html(df: pd.DataFrame) -> str:
         styler = styler.set_properties(
             subset=white_cols,
             **{
-                "background-color": "#ffffff",
-                "color": "black !important",
+                "background-color": get_group_color("White", scheme="pacetabelle_table"),
+                "color": f"{get_group_text_color('White')} !important",
+            },
+        )
+
+    critical_cols = [c for c in ["Critical 40", "Critical 40 speed"] if c in df.columns]
+    if critical_cols:
+        styler = styler.set_properties(
+            subset=critical_cols,
+            **{
+                "background-color": get_group_color("Critical 40", scheme="pacetabelle_table"),
+                "color": f"{get_group_text_color('Critical 40')} !important",
             },
         )
 
@@ -239,32 +240,42 @@ OUTLINE_GRAY = "#2b2b2b"  # dunkelgrau für Rand + Outlier
 
 def _group_style(group_name: str) -> dict:
     if group_name == GROUP_TOP10:
-        return dict(fill=COLOR_TOP10, line=OUTLINE_GRAY, text="#111111")
+        return dict(fill=get_group_color("Top10"), line=OUTLINE_GRAY, text=get_group_text_color("Top10"))
     if group_name == GROUP_BLACK:
-        return dict(fill=COLOR_BLACK, line=OUTLINE_GRAY, text="#ffffff")
+        return dict(fill=get_group_color("Black"), line=OUTLINE_GRAY, text=get_group_text_color("Black"))
     if group_name == GROUP_WHITE:
-        return dict(fill=COLOR_WHITE, line=OUTLINE_GRAY, text="#111111")
+        return dict(fill=get_group_color("White"), line=OUTLINE_GRAY, text=get_group_text_color("White"))
+    if group_name == GROUP_CRITICAL:
+        return dict(fill=get_group_color("Critical 40"), line=OUTLINE_GRAY, text=get_group_text_color("Critical 40"))
     return dict(fill="#cccccc", line=OUTLINE_GRAY, text="#111111")
 
 
-def build_leg_boxplot(df: pd.DataFrame, time_col: str, leg_name: str) -> go.Figure:
+def build_leg_boxplot(df: pd.DataFrame, time_col: str, leg_name: str, selected_group: str = "All") -> go.Figure:
     """
     Boxplot pro Leg, Gruppen: Top10 / Black / White (DNF raus).
     y = Stunden, Hover = h:mm:ss
     """
-    plot_df = df[["finish_type", "Top10_flag", time_col]].copy()
+    plot_df = df[["finish_type", "Top10_flag", "overall_rank", time_col]].copy()
     plot_df = plot_df.dropna(subset=[time_col])
 
     def group_label(row):
         if bool(row.get("Top10_flag", False)):
             return GROUP_TOP10
+        if is_critical_40_group(selected_group):
+            rank = pd.to_numeric(pd.Series([row.get("overall_rank")]), errors="coerce").iloc[0]
+            if pd.notna(rank) and 140 <= float(rank) <= 180:
+                return GROUP_CRITICAL
         ft = row.get("finish_type", "")
         if ft in (GROUP_BLACK, GROUP_WHITE):
             return ft
         return "Other"
 
     plot_df["group"] = plot_df.apply(group_label, axis=1)
-    plot_df = plot_df[plot_df["group"].isin([GROUP_TOP10, GROUP_BLACK, GROUP_WHITE])].copy()
+    if is_critical_40_group(selected_group):
+        keep_groups = [GROUP_TOP10, GROUP_BLACK, GROUP_CRITICAL]
+    else:
+        keep_groups = [GROUP_TOP10, GROUP_BLACK, GROUP_WHITE]
+    plot_df = plot_df[plot_df["group"].isin(keep_groups)].copy()
 
     fig = go.Figure()
 
@@ -292,7 +303,7 @@ def build_leg_boxplot(df: pd.DataFrame, time_col: str, leg_name: str) -> go.Figu
     plot_df["hours"] = plot_df[time_col] / 3600.0
     plot_df["hms"] = plot_df[time_col].apply(seconds_to_hms)
 
-    order = [GROUP_TOP10, GROUP_BLACK, GROUP_WHITE]
+    order = [GROUP_TOP10, GROUP_BLACK, GROUP_CRITICAL] if is_critical_40_group(selected_group) else [GROUP_TOP10, GROUP_BLACK, GROUP_WHITE]
     for g in order:
         sub = plot_df[plot_df["group"] == g]
         if sub.empty:
@@ -352,10 +363,18 @@ def build_leg_stats_table(df: pd.DataFrame, time_col: str, leg_cfg: dict, select
     df_top10 = df[df["Top10_flag"]]
     df_black = df[df["finish_type"] == GROUP_BLACK]
     df_white = df[df["finish_type"] == GROUP_WHITE]
+    df_critical = apply_group_filter(
+        df,
+        GROUP_CRITICAL_40,
+        finish_col="finish_type",
+        rank_col="overall_rank",
+        top10_col="Top10_flag",
+    )
 
     stats_top10 = summarize_group_median(df_top10, time_col)
     stats_black = summarize_group_median(df_black, time_col)
     stats_white = summarize_group_median(df_white, time_col)
+    stats_critical = summarize_group_median(df_critical, time_col)
 
     metrics_order = [
         ("Median", "median"),
@@ -381,12 +400,16 @@ def build_leg_stats_table(df: pd.DataFrame, time_col: str, leg_cfg: dict, select
             if mode is not None and dist is not None:
                 row[f"{group_name} speed"] = speed_string_for_metric_median(stats, key, dist, mode)
 
-        if selected_group in ("All", "Top 10"):
+        show_critical = is_critical_40_group(selected_group)
+
+        if selected_group in ("All", "Top 10") or show_critical:
             add_group_cols("Top10", stats_top10)
-        if selected_group in ("All", "Black Shirt"):
+        if selected_group in ("All", "Black Shirt") or show_critical:
             add_group_cols("Black", stats_black)
         if selected_group in ("All", "White Shirt"):
             add_group_cols("White", stats_white)
+        if show_critical:
+            add_group_cols("Critical 40", stats_critical)
 
         rows.append(row)
 
@@ -456,12 +479,7 @@ def render_pace_boxplots_with_tables(selected_year="All", selected_group="All") 
     # ----------------------------
     # Year filter from header
     # ----------------------------
-    if selected_year != "All" and "year" in df.columns:
-        try:
-            year_int = int(selected_year)
-            df = df[pd.to_numeric(df["year"], errors="coerce") == year_int]
-        except Exception:
-            df = df[df["year"].astype(str) == str(selected_year)]
+    df = apply_year_filter(df, selected_year, year_col="year")
 
     # ----------------------------
     # Legs: Speed/Pace only if mode != None (T1/T2 have None)
@@ -503,7 +521,7 @@ def render_pace_boxplots_with_tables(selected_year="All", selected_group="All") 
     row2_cfgs = [c for c in [cfg_t2, cfg_run, cfg_total] if c is not None]
 
     def _render_leg(cfg: dict):
-        fig = build_leg_boxplot(df, cfg["col"], cfg["name"])
+        fig = build_leg_boxplot(df, cfg["col"], cfg["name"], selected_group=selected_group)
         st.plotly_chart(fig, width="content")
 
         with st.expander("Show stats (Median / Std / Min / Max)", expanded=False):

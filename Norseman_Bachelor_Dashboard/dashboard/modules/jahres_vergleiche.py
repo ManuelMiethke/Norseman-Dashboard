@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from utils.race_logic import apply_group_filter
 
 
 # ------------------------------------------------------------
@@ -62,39 +63,13 @@ def _norm_str(x) -> str:
 # Filtering by header group
 # ------------------------------------------------------------
 def _apply_group_filter(df: pd.DataFrame, selected_group: str) -> pd.DataFrame:
-    g = (selected_group or "All").strip()
-
-    # "All" -> no filter
-    if g == "All":
-        return df
-
-    # Prefer finish_type if present
-    finish_col = None
-    for c in ["finish_type", "finish_raw", "finish"]:
-        if c in df.columns:
-            finish_col = c
-            break
-
-    if g == "DNF":
-        if finish_col:
-            return df[df[finish_col].apply(_norm_str).str.contains("dnf")]
-        # fallback: nothing we can do safely
-        return df.iloc[0:0].copy()
-
-    if g in ["Black Shirt", "White Shirt"]:
-        if finish_col:
-            key = "black" if g == "Black Shirt" else "white"
-            return df[df[finish_col].apply(_norm_str).str.contains(key)]
-        return df.iloc[0:0].copy()
-
-    if g == "Top 10":
-        # Best effort: overall_rank column
-        if "overall_rank" in df.columns:
-            return df[pd.to_numeric(df["overall_rank"], errors="coerce") <= 10]
-        # fallback: nothing we can do safely
-        return df.iloc[0:0].copy()
-
-    return df
+    return apply_group_filter(
+        df,
+        selected_group,
+        finish_col="finish_type",
+        rank_col="overall_rank",
+        top10_col="Top10_flag",
+    )
 
 
 # ------------------------------------------------------------
@@ -430,4 +405,3 @@ Each year contains **three horizontal bars**:
     for col in piv_disp.columns:
         if col != "year":
             piv_disp[col] = piv_disp[col].apply(fmt)
-

@@ -9,8 +9,13 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from utils.race_logic import (
+    GROUP_CRITICAL_40,
     apply_run_cutoff as apply_run_cutoff_shared,
     apply_year_filter,
+    apply_group_filter,
+    get_group_color,
+    get_group_text_color,
+    is_critical_40_group,
     parse_time_to_seconds,
     run_cutoff_distance_for_year,
 )
@@ -35,17 +40,6 @@ SEGMENT_COLORS = {
 BACKGROUND_DARK = "#7A7A7A"
 TEXT_COLOR = "#ffffff"
 DATA_PATH = Path(__file__).resolve().parents[1] / "assets" / "nxtri_data_all_years.csv"
-
-# Farben für Überschriften
-TOP10_BG = "#b7ffb7"
-TOP10_FONT = "#000000"
-
-BLACK_BG = "#000000"
-BLACK_FONT = "#ffffff"
-
-WHITE_BG = "#ffffff"
-WHITE_FONT = "#000000"
-
 
 # --------------------------------------------------
 # Helper-Funktionen
@@ -147,6 +141,14 @@ def _compute_time_share_for_group(
         df_group = df[df["finish_type"] == "Black"]
     elif group == "White Shirt":
         df_group = df[df["finish_type"] == "White"]
+    elif is_critical_40_group(group):
+        df_group = apply_group_filter(
+            df,
+            GROUP_CRITICAL_40,
+            finish_col="finish_type",
+            rank_col="overall_rank",
+            top10_col="Top10_flag",
+        )
     else:
         return None
 
@@ -403,15 +405,45 @@ across the three Norseman race segments (*Swim, Bike, Run*), split by athlete gr
             charts.append(fig)
 
     if selected_group == "All":
-        add_group_chart("Top 10", TOP10_BG, TOP10_FONT)
-        add_group_chart("Black Shirt", BLACK_BG, BLACK_FONT)
-        add_group_chart("White Shirt", WHITE_BG, WHITE_FONT)
+        add_group_chart(
+            "Top 10",
+            get_group_color("Top 10", scheme="timerelations_title_bg"),
+            get_group_text_color("Top 10"),
+        )
+        add_group_chart(
+            "Black Shirt",
+            get_group_color("Black Shirt", scheme="timerelations_title_bg"),
+            get_group_text_color("Black Shirt"),
+        )
+        add_group_chart(
+            "White Shirt",
+            get_group_color("White Shirt", scheme="timerelations_title_bg"),
+            get_group_text_color("White Shirt"),
+        )
     elif selected_group == "Top 10":
-        add_group_chart("Top 10", TOP10_BG, TOP10_FONT)
+        add_group_chart(
+            "Top 10",
+            get_group_color("Top 10", scheme="timerelations_title_bg"),
+            get_group_text_color("Top 10"),
+        )
     elif selected_group == "Black Shirt":
-        add_group_chart("Black Shirt", BLACK_BG, BLACK_FONT)
+        add_group_chart(
+            "Black Shirt",
+            get_group_color("Black Shirt", scheme="timerelations_title_bg"),
+            get_group_text_color("Black Shirt"),
+        )
     elif selected_group == "White Shirt":
-        add_group_chart("White Shirt", WHITE_BG, WHITE_FONT)
+        add_group_chart(
+            "White Shirt",
+            get_group_color("White Shirt", scheme="timerelations_title_bg"),
+            get_group_text_color("White Shirt"),
+        )
+    elif is_critical_40_group(selected_group):
+        add_group_chart(
+            GROUP_CRITICAL_40,
+            get_group_color(GROUP_CRITICAL_40, scheme="timerelations_title_bg"),
+            get_group_text_color(GROUP_CRITICAL_40),
+        )
     elif selected_group == "DNF":
         pass
 
