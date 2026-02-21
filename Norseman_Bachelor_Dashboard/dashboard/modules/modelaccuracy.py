@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from pathlib import Path
 from plotly.subplots import make_subplots
+from utils.race_logic import apply_group_filter, apply_year_filter
 
 # Bridge data layer 
 try:
@@ -69,20 +70,14 @@ def load_course_profile(path: Path) -> pd.DataFrame:
 # Filtering
 # --------------------------------------------------
 def apply_filters(df: pd.DataFrame, year, group) -> pd.DataFrame:
-    if year not in (None, "All"):
-        df = df[df["year"] == int(year)]
-
-    if group not in (None, "All"):
-        if group == "Top 10":
-            df = df[df["split_rank"] <= 10]
-        elif group == "Black Shirt":
-            df = df[df["finish_type"].str.contains("Black", case=False, na=False)]
-        elif group == "White Shirt":
-            df = df[df["finish_type"].str.contains("White", case=False, na=False)]
-        elif group == "DNF":
-            df = df[df["finish_type"].str.contains("DNF", case=False, na=False)]
-
-    return df
+    df = apply_year_filter(df, year, year_col="year")
+    return apply_group_filter(
+        df,
+        group,
+        finish_col="finish_type",
+        rank_col="split_rank",
+        top10_col="Top10_flag",
+    )
 
 
 # --------------------------------------------------
@@ -411,4 +406,3 @@ This visualization shows how accurately the prediction model classifies athletes
 
     fig = build_figure(acc_df, course_df)
     st.plotly_chart(fig, width="stretch")
-

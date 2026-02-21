@@ -8,6 +8,12 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from utils.race_logic import (
+    apply_run_cutoff as apply_run_cutoff_shared,
+    apply_year_filter,
+    parse_time_to_seconds,
+    run_cutoff_distance_for_year,
+)
 
 # --------------------------------------------------
 # Konstanten
@@ -19,7 +25,6 @@ RUN_DISTANCE_KM = 42.2
 
 SEGMENT_LABELS = ["Swim", "Bike", "Run"]
 SEGMENT_DISTANCES = [SWIM_DISTANCE_KM, BIKE_DISTANCE_KM, RUN_DISTANCE_KM]
-YEARS_WITH_37_5_CUTOFF = {2024, 2025}
 
 SEGMENT_COLORS = {
     "Swim": "#64b5f6",   
@@ -48,22 +53,7 @@ WHITE_FONT = "#000000"
 
 def time_to_seconds(t) -> float:
     """Konvertiert 'h:mm:ss' oder 'mm:ss' in Sekunden."""
-    if pd.isna(t) or t is None or t == "":
-        return np.nan
-    t = str(t).strip()
-    parts = t.split(":")
-
-    try:
-        if len(parts) == 2:          # mm:ss
-            h = 0
-            m, s = parts
-        elif len(parts) == 3:        # h:mm:ss
-            h, m, s = parts
-        else:
-            return np.nan
-        return int(h) * 3600 + int(m) * 60 + int(round(float(s)))
-    except Exception:
-        return np.nan
+    return parse_time_to_seconds(t)
 
 
 def seconds_to_hms(sec: float) -> str:
@@ -87,41 +77,9 @@ def format_delta(delta_sec: float) -> str:
     return f"Δ {sign}{seconds_to_hms(abs(delta_sec))}"
 
 
-def _year_uses_37_5_cutoff(year_value) -> bool:
-    """2024/2025 laufen bis 37.5 km Cut-Off, sonst bis 32.5 km."""
-    try:
-        return int(float(year_value)) in YEARS_WITH_37_5_CUTOFF
-    except Exception:
-        return False
-
-
-def _run_cutoff_seconds_for_row(row: pd.Series) -> float:
-    """
-    Berechnet Run-Sekunden bis zum Jahres-Cut-Off:
-    - 2024/2025 -> run_37_5km_stavsro_cut_off_time
-    - sonst     -> run_32_5km_langefonn_time
-    """
-    cutoff_col = (
-        "run_37_5km_stavsro_cut_off_time"
-        if _year_uses_37_5_cutoff(row.get("year"))
-        else "run_32_5km_langefonn_time"
-    )
-
-    run_start_s = time_to_seconds(row.get("run_start_time"))
-    cutoff_s = time_to_seconds(row.get(cutoff_col))
-
-    if np.isnan(run_start_s) or np.isnan(cutoff_s):
-        return np.nan
-
-    delta_s = cutoff_s - run_start_s
-    return delta_s if delta_s >= 0 else np.nan
-
-
 def _apply_run_cutoff(df: pd.DataFrame) -> pd.DataFrame:
     """Erzeugt die Spalte run_time_cutoff_s (Run-Zeit nur bis Cut-Off)."""
-    df = df.copy()
-    df["run_time_cutoff_s"] = df.apply(_run_cutoff_seconds_for_row, axis=1)
-    return df
+    return apply_run_cutoff_shared(df, output_col="run_time_cutoff_s")
 
 
 def _cutoff_run_distance_for_selection(df: pd.DataFrame, selected_year) -> float:
@@ -131,7 +89,7 @@ def _cutoff_run_distance_for_selection(df: pd.DataFrame, selected_year) -> float
     - Year=All            -> Mittelwert über vorhandene Jahre im gefilterten DF
     """
     if selected_year != "All":
-        return 37.5 if _year_uses_37_5_cutoff(selected_year) else 32.5
+        return run_cutoff_distance_for_year(selected_year)
 
     if "year" not in df.columns:
         return 32.5
@@ -140,7 +98,7 @@ def _cutoff_run_distance_for_selection(df: pd.DataFrame, selected_year) -> float
     if len(years) == 0:
         return 32.5
 
-    distances = [37.5 if _year_uses_37_5_cutoff(y) else 32.5 for y in years]
+    distances = [run_cutoff_distance_for_year(y) for y in years]
     return float(np.mean(distances))
 
 
@@ -317,8 +275,7 @@ def render_time_relations(df: pd.DataFrame | None = None) -> None:
         df = load_wide_for_timerelations()
 
     selected_year = st.session_state.get("year_filter", "All")
-    if selected_year != "All" and "year" in df.columns:
-        df = df[df["year"] == selected_year]
+    df = apply_year_filter(df, selected_year, year_col="year")
 
     selected_group = st.session_state.get("group_filter", "All")
 

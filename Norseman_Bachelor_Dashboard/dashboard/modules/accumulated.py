@@ -3,6 +3,7 @@
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from utils.race_logic import apply_group_filter, apply_year_filter
 
 
 def render(df_long: pd.DataFrame, selected_year, selected_group):
@@ -21,24 +22,14 @@ def render(df_long: pd.DataFrame, selected_year, selected_group):
     # ----------------------------
     df = df_long.copy()
 
-    if selected_year != "All":
-        try:
-            year_int = int(selected_year)
-            df = df[pd.to_numeric(df["year"], errors="coerce") == year_int]
-        except Exception:
-            # fallback: wenn selected_year nicht int-konvertierbar ist
-            df = df[df["year"].astype(str) == str(selected_year)]
-
-
-    if selected_group != "All":
-        if selected_group == "Top 10" and "overall_rank" in df.columns:
-            df = df[df["overall_rank"] <= 10]
-        elif selected_group == "Black Shirt" and "finish_type" in df.columns:
-            df = df[df["finish_type"] == "Black"]
-        elif selected_group == "White Shirt" and "finish_type" in df.columns:
-            df = df[df["finish_type"] == "White"]
-        elif selected_group == "DNF" and "finish_type" in df.columns:
-            df = df[df["finish_type"] == "DNF"]
+    df = apply_year_filter(df, selected_year, year_col="year")
+    df = apply_group_filter(
+        df,
+        selected_group,
+        finish_col="finish_type",
+        rank_col="overall_rank",
+        top10_col="Top10_flag",
+    )
 
     if df.empty:
         st.info("No data for the selected filters.")
