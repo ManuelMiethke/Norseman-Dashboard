@@ -442,6 +442,16 @@ def load_wide() -> pd.DataFrame:
         else:
             df[dst] = np.nan
 
+    # Flat marathon section: Run start -> 25 km (before Zombie Hill climb)
+    if "run_start_time" in df.columns and "run_25km_zombie_hill_base_time" in df.columns:
+        run_start_s = df["run_start_time"].apply(time_to_seconds)
+        run_25_s = df["run_25km_zombie_hill_base_time"].apply(time_to_seconds)
+        flat_25_s = run_25_s - run_start_s
+        flat_25_s = flat_25_s.where(flat_25_s >= 0, np.nan)
+        df["run_flat_0_25km_time_s"] = flat_25_s
+    else:
+        df["run_flat_0_25km_time_s"] = np.nan
+
     if "overall_rank" in df.columns:
         df["Top10_flag"] = df["overall_rank"].le(10)
     else:
@@ -490,6 +500,7 @@ def render_pace_boxplots_with_tables(selected_year="All", selected_group="All") 
         {"name": "Bike",        "col": "bike_time_s",        "dist_km": 180.0,            "mode": "kmh"},
         {"name": "T2",          "col": "t2_time_s",          "dist_km": None,             "mode": None},
         {"name": "Run",         "col": "run_time_s",         "dist_km": 42.2,             "mode": "min_per_km"},
+        {"name": "Flat Marathon Section (to km 25)", "col": "run_flat_0_25km_time_s", "dist_km": 25.0, "mode": "min_per_km"},
         {"name": "Zombie Hill", "col": "zombie_hill_time_s", "dist_km": 7.5,              "mode": "min_per_km"},
         {"name": "Total",       "col": "overall_time_s",     "dist_km": 3.8 + 180 + 42.2, "mode": "kmh"},
     ]
@@ -515,6 +526,7 @@ def render_pace_boxplots_with_tables(selected_year="All", selected_group="All") 
     cfg_t2 = _find_cfg("T2")
     cfg_run = _find_cfg("Run")
     cfg_total = _find_cfg("Total")
+    cfg_flat_marathon = _find_cfg("Flat Marathon Section (to km 25)")
     cfg_zombie = _find_cfg("Zombie Hill")
 
     row1_cfgs = [c for c in [cfg_swim, cfg_t1, cfg_bike] if c is not None]
@@ -543,7 +555,25 @@ def render_pace_boxplots_with_tables(selected_year="All", selected_group="All") 
                 _render_leg(row2_cfgs[i])
 
             # Zombie Hill toggle: appears under T2 (first col in row2)
-            if i == 0 and cfg_zombie is not None:
-                show_zombie = st.checkbox("Show Zombie Hill", value=False)
-                if show_zombie:
-                    _render_leg(cfg_zombie)
+            if i == 0:
+                show_flat_marathon = False
+                show_zombie = False
+
+                if cfg_flat_marathon is not None:
+                    show_flat_marathon = st.checkbox("Show Flat Marathon Section (to km 25)", value=False)
+
+                # Zombie Hill toggle: appears under flat-marathon toggle
+                if cfg_zombie is not None:
+                    show_zombie = st.checkbox("Show Zombie Hill", value=False)
+
+                if show_flat_marathon and cfg_flat_marathon is not None and show_zombie and cfg_zombie is not None:
+                    cmp_col1, cmp_col2 = st.columns(2, gap="medium")
+                    with cmp_col1:
+                        _render_leg(cfg_flat_marathon)
+                    with cmp_col2:
+                        _render_leg(cfg_zombie)
+                else:
+                    if show_flat_marathon and cfg_flat_marathon is not None:
+                        _render_leg(cfg_flat_marathon)
+                    if show_zombie and cfg_zombie is not None:
+                        _render_leg(cfg_zombie)
