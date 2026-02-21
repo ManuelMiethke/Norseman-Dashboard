@@ -720,7 +720,7 @@ def build_weatherspeed_figure(
                 y=course_df[COL_ELEV_HAWAII],
                 name="Ironman Hawaii elevation",
                 mode="lines",
-                line=dict(width=2, dash="dash", color="#FF2F00"),
+                line=dict(width=2, dash="dash", color="#CD6149"),
                 opacity=0.95,
                 hovertemplate="Hawaii km %{x:.1f}<br>Elev: %{y:.0f} m<extra></extra>",
             ),

@@ -3,8 +3,10 @@ import math
 import numpy as np
 import pandas as pd
 import streamlit as st
+import plotly.graph_objects as go
 
 # --- Data Bridge ---
+from data_store import course_profile as ds_course_profile
 from data_store import df_model as ds_df_model
 
 # =========================================
@@ -20,6 +22,33 @@ STAVSRO_CUTOFF_TIME_S = 13 * 3600 + 51 * 60  # 13:51:00
 
 # Fixed T2 assumption (only relevant if athlete is still on the bike)
 T2_FIXED_TIME_S = 4 * 60  # 4 minutes
+
+TARGET_SPLITS_TO_STAVSRO = [
+    "bike_6km_ovre_eidfjord",
+    "bike_11km_enter_gamlevegen",
+    "bike_16km_voringfossen",
+    "bike_20km_garen",
+    "bike_28km_bjoreio",
+    "bike_36km_dyranut",
+    "bike_47km_halne",
+    "bike_66km_haugastol",
+    "bike_90km_geilo",
+    "bike_94km_kikut",
+    "bike_101km_skurdalen",
+    "bike_113km_dagali",
+    "bike_123km_vasstulan",
+    "bike_134km_start_imingfjell",
+    "bike_142km_top_imingfjell",
+    "bike_152km_end_imingfjell",
+    "bike_180km_finish",
+    "run_5km_atraa",
+    "run_10km",
+    "run_15km_tinnsjo",
+    "run_20km_miland",
+    "run_25km_zombie_hill_base",
+    "run_32_5km_langefonn",
+    "run_37_5km_stavsro_cut_off",
+]
 
 # =========================================
 # 1. Data prep
@@ -245,6 +274,185 @@ def compute_required_paces(
 
     run_pace_req = run_pace_med_min_per_km * g
     return leg, bike_speed_req, run_pace_req, infeasible
+
+
+def _parse_km_from_split_key(split_key: str) -> float | None:
+    k = str(split_key)
+    if k.startswith("bike_") and "km" in k:
+        v = k.split("bike_", 1)[1].split("km", 1)[0].replace("_", ".")
+        try:
+            return float(v)
+        except Exception:
+            return None
+    if k.startswith("run_") and "km" in k:
+        v = k.split("run_", 1)[1].split("km", 1)[0].replace("_", ".")
+        try:
+            return float(v)
+        except Exception:
+            return None
+    return None
+
+
+def _split_distance_map(df_probs: pd.DataFrame) -> dict[str, float]:
+    m = (
+        df_probs.groupby("split_key", as_index=False)["race_distance_km"]
+        .median()
+        .dropna()
+    )
+    out = {str(r["split_key"]): float(r["race_distance_km"]) for _, r in m.iterrows()}
+    for k in TARGET_SPLITS_TO_STAVSRO:
+        if k in out:
+            continue
+        km = _parse_km_from_split_key(k)
+        if km is None:
+            continue
+        if k.startswith("bike_"):
+            out[k] = SWIM_DIST_KM + km
+        elif k.startswith("run_"):
+            out[k] = SWIM_DIST_KM + BIKE_DIST_KM + km
+    return out
+
+
+def _format_hms_from_seconds(sec: float | None) -> str:
+    if sec is None or not math.isfinite(sec):
+        return "–"
+    s = int(round(float(sec)))
+    h = s // 3600
+    m = (s % 3600) // 60
+    ss = s % 60
+    return f"{h:d}:{m:02d}:{ss:02d}"
+
+
+def _required_split_plan(
+    *,
+    df_probs: pd.DataFrame,
+    current_race_km: float,
+    current_time_s: float,
+    target_time_s: float,
+) -> tuple[pd.DataFrame, dict]:
+    if df_probs.empty:
+        return pd.DataFrame(), {}
+
+    dm = _split_distance_map(df_probs)
+    target_km = dm.get("run_37_5km_stavsro_cut_off", SWIM_DIST_KM + BIKE_DIST_KM + RUN_STAVSRO_DIST_KM)
+
+    # Median split speed by Black Shirt
+    df_b = df_probs.copy()
+    if "finish_type" in df_b.columns:
+        df_b = df_b[df_b["finish_type"].astype(str).str.lower().eq("black")]
+    if "segment_speed_kmh" in df_b.columns:
+        df_b["segment_speed_kmh"] = pd.to_numeric(df_b["segment_speed_kmh"], errors="coerce")
+        speed_by_split = (
+            df_b.dropna(subset=["split_key", "segment_speed_kmh"])
+            .groupby("split_key", as_index=False)["segment_speed_kmh"]
+            .median()
+        )
+        speed_by_split = {str(r["split_key"]): float(r["segment_speed_kmh"]) for _, r in speed_by_split.iterrows()}
+    else:
+        speed_by_split = {}
+
+    checkpoints = []
+    for k in TARGET_SPLITS_TO_STAVSRO:
+        d = dm.get(k)
+        if d is None:
+            continue
+        if d > current_race_km and d <= target_km + 1e-9:
+            checkpoints.append((k, float(d)))
+    checkpoints = sorted(checkpoints, key=lambda x: x[1])
+    if not checkpoints:
+        return pd.DataFrame(), {
+            "target_km": float(target_km),
+            "t2_applied": 0.0,
+            "time_budget_s": float(target_time_s - current_time_s),
+            "eta_s": float(current_time_s),
+            "hit_target": current_time_s <= target_time_s,
+            "clipped": False,
+        }
+
+    # Fixed T2 if athlete still on bike and run splits remain
+    has_run_remaining = any(k.startswith("run_") for k, _ in checkpoints)
+    t2_applied = float(T2_FIXED_TIME_S if (current_race_km < (SWIM_DIST_KM + BIKE_DIST_KM) and has_run_remaining) else 0.0)
+    time_budget_s = float(target_time_s - current_time_s - t2_applied)
+    if time_budget_s <= 0:
+        return pd.DataFrame(), {
+            "target_km": float(target_km),
+            "t2_applied": t2_applied,
+            "time_budget_s": time_budget_s,
+            "eta_s": float(current_time_s + t2_applied),
+            "hit_target": False,
+            "clipped": True,
+        }
+
+    # Build baseline times per remaining segment (using median Black split-speed)
+    segs = []
+    prev_km = float(current_race_km)
+    for split_key, end_km in checkpoints:
+        dist = float(end_km - prev_km)
+        if dist <= 0:
+            prev_km = float(end_km)
+            continue
+        leg = "bike" if end_km <= (SWIM_DIST_KM + BIKE_DIST_KM + 1e-9) else "run"
+        base_v = speed_by_split.get(split_key)
+        if base_v is None or not math.isfinite(base_v) or base_v <= 0:
+            base_v = 24.0 if leg == "bike" else 9.5
+        base_v = float(np.clip(base_v, 6.0, 60.0 if leg == "bike" else 22.0))
+        base_t = dist / base_v * 3600.0
+        segs.append(
+            {
+                "split_key": split_key,
+                "end_km": float(end_km),
+                "segment_dist_km": dist,
+                "leg": leg,
+                "base_speed_kmh": base_v,
+                "base_time_s": base_t,
+            }
+        )
+        prev_km = float(end_km)
+
+    if not segs:
+        return pd.DataFrame(), {}
+
+    base_total = float(sum(s["base_time_s"] for s in segs))
+    if base_total <= 0:
+        return pd.DataFrame(), {}
+
+    g = float(time_budget_s / base_total)
+
+    # Required split speeds with realistic caps
+    rows = []
+    cum_s = float(current_time_s + t2_applied)
+    clipped = False
+    for s in segs:
+        raw_v = s["base_speed_kmh"] / g
+        v_min, v_max = (10.0, 65.0) if s["leg"] == "bike" else (5.0, 18.0)
+        adj_v = float(np.clip(raw_v, v_min, v_max))
+        if abs(adj_v - raw_v) > 1e-9:
+            clipped = True
+        seg_t = s["segment_dist_km"] / adj_v * 3600.0
+        cum_s += seg_t
+        rows.append(
+            {
+                "Split": s["split_key"],
+                "Distance (km)": round(s["end_km"], 1),
+                "Leg": s["leg"].title(),
+                "Segment dist (km)": round(s["segment_dist_km"], 1),
+                "Required speed (km/h)": round(adj_v, 1),
+                "Segment time": _format_hms_from_seconds(seg_t),
+                "Cumulative time": _format_hms_from_seconds(cum_s),
+                "_cum_seconds": cum_s,
+            }
+        )
+
+    plan = pd.DataFrame(rows)
+    meta = {
+        "target_km": float(target_km),
+        "t2_applied": t2_applied,
+        "time_budget_s": float(time_budget_s),
+        "eta_s": float(cum_s),
+        "hit_target": bool(cum_s <= target_time_s + 1e-9),
+        "clipped": bool(clipped),
+    }
+    return plan, meta
 
 
 # =========================================
@@ -553,6 +761,176 @@ We look at historical athletes with **similar distance & time** and show:
                         "⚠️ Note: to reach the target time, both bike and run would need to be much faster "
                         "than typical Black-Shirt performances – the required paces are purely theoretical."
                     )
+
+            with st.expander("Dynamic split plan to Stavsro", expanded=False):
+                plan_df, plan_meta = _required_split_plan(
+                    df_probs=df_probs,
+                    current_race_km=float(race_km),
+                    current_time_s=float(current_time_s),
+                    target_time_s=float(target_stavsro_time_s),
+                )
+
+                if plan_df.empty:
+                    st.info("No remaining official splits found from your current point to Stavsro.")
+                else:
+                    if plan_meta.get("t2_applied", 0.0) > 0:
+                        st.caption("Includes fixed T2 assumption of 4:00 before run split planning.")
+
+                    eta_s = float(plan_meta.get("eta_s", np.nan))
+                    target_ok = bool(plan_meta.get("hit_target", False))
+                    clipped = bool(plan_meta.get("clipped", False))
+                    if math.isfinite(eta_s):
+                        delta_s = eta_s - float(target_stavsro_time_s)
+                        sign = "+" if delta_s >= 0 else "-"
+                        st.caption(
+                            f"Planned ETA at Stavsro: **{_format_hms_from_seconds(eta_s)}** "
+                            f"(target 13:51:00, delta {sign}{_format_hms_from_seconds(abs(delta_s))})."
+                        )
+                    if clipped or (not target_ok):
+                        st.warning(
+                            "This plan is constrained to realistic per-split speed ranges "
+                            "(Bike 10–65 km/h, Run 5–18 km/h). Target may not be fully reachable."
+                        )
+
+                    fig = go.Figure()
+                    GAP_KM = 6.0
+                    bike_offset = SWIM_DIST_KM + GAP_KM
+                    run_offset = bike_offset + BIKE_DIST_KM + GAP_KM
+
+                    def _x_leg_axis(cum_km: float) -> float:
+                        x = float(cum_km)
+                        if x <= SWIM_DIST_KM + 1e-9:
+                            return x
+                        if x <= (SWIM_DIST_KM + BIKE_DIST_KM) + 1e-9:
+                            return (x - SWIM_DIST_KM) + bike_offset
+                        return (x - (SWIM_DIST_KM + BIKE_DIST_KM)) + run_offset
+
+                    def _leg_km_label(cum_km: float) -> str:
+                        x = float(cum_km)
+                        if x <= SWIM_DIST_KM + 1e-9:
+                            return f"Swim {x:.1f}"
+                        if x <= (SWIM_DIST_KM + BIKE_DIST_KM) + 1e-9:
+                            return f"Bike {x - SWIM_DIST_KM:.1f}"
+                        return f"Run {x - SWIM_DIST_KM - BIKE_DIST_KM:.1f}"
+
+                    x_vals_cum = [float(race_km)] + plan_df["Distance (km)"].astype(float).tolist()
+                    x_vals = [_x_leg_axis(v) for v in x_vals_cum]
+                    y_vals = [np.nan]
+                    y_vals.extend(plan_df["Required speed (km/h)"].astype(float).tolist())
+
+                    # Subtle elevation background (light gray), aligned to leg-axis transform.
+                    try:
+                        cdf = ds_course_profile().copy()
+                        if {"distance_km", "elev_norseman_m"}.issubset(cdf.columns):
+                            cdf["distance_km"] = pd.to_numeric(cdf["distance_km"], errors="coerce")
+                            cdf["elev_norseman_m"] = pd.to_numeric(cdf["elev_norseman_m"], errors="coerce")
+                            cdf = cdf.dropna(subset=["distance_km", "elev_norseman_m"])
+                            cdf = cdf[
+                                (cdf["distance_km"] >= float(min(x_vals_cum)))
+                                & (cdf["distance_km"] <= float(max(x_vals_cum)))
+                            ].copy()
+                            if not cdf.empty:
+                                cdf["x_plot"] = cdf["distance_km"].astype(float).apply(_x_leg_axis)
+                                fig.add_trace(
+                                    go.Scatter(
+                                        x=cdf["x_plot"],
+                                        y=cdf["elev_norseman_m"],
+                                        mode="lines",
+                                        name="Elevation",
+                                        line=dict(width=1.2, color="rgba(220,220,220,0.45)"),
+                                        fill="tozeroy",
+                                        fillcolor="rgba(220,220,220,0.18)",
+                                        yaxis="y2",
+                                        hovertemplate="Elevation: %{y:.0f} m<extra></extra>",
+                                        showlegend=False,
+                                    )
+                                )
+                    except Exception:
+                        pass
+
+                    for i in range(1, len(x_vals)):
+                        x0, x1 = x_vals[i - 1], x_vals[i]
+                        y = y_vals[i]
+                        x1_cum = x_vals_cum[i]
+                        label = _leg_km_label(x1_cum)
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x0, x1],
+                                y=[y, y],
+                                mode="lines",
+                                line=dict(color="#FF8C00", width=5),
+                                showlegend=False,
+                                customdata=[[label], [label]],
+                                hovertemplate="%{customdata[0]} km<br>Required speed: %{y:.1f} km/h<extra></extra>",
+                            )
+                        )
+                        fig.add_trace(
+                            go.Scatter(
+                                x=[x1],
+                                y=[y],
+                                mode="markers",
+                                marker=dict(size=6, color="#FF8C00"),
+                                showlegend=False,
+                                customdata=[[label]],
+                                hovertemplate="Split end: %{customdata[0]} km<br>Required speed: %{y:.1f} km/h<extra></extra>",
+                            )
+                        )
+
+                    for xv in [_x_leg_axis(v) for v in plan_df["Distance (km)"].astype(float).tolist()]:
+                        fig.add_vline(
+                            x=xv,
+                            line_width=1,
+                            line_dash="dot",
+                            line_color="rgba(220,220,220,0.35)",
+                        )
+
+                    fig.update_layout(
+                        paper_bgcolor="#7a7a7a",
+                        plot_bgcolor="#7a7a7a",
+                        font=dict(color="white"),
+                        margin=dict(l=40, r=20, t=20, b=40),
+                        height=420,
+                        xaxis=dict(
+                            title="Leg distance (km)",
+                            range=[float(min(x_vals)), float(max(x_vals))],
+                            tickmode="array",
+                            tickvals=[x_vals[0]] + x_vals[1:],
+                            ticktext=[_leg_km_label(v) for v in x_vals_cum],
+                        ),
+                        yaxis=dict(title="Required speed (km/h)"),
+                        yaxis2=dict(
+                            title="Elevation (m)",
+                            overlaying="y",
+                            side="right",
+                            showgrid=False,
+                            zeroline=False,
+                        ),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                    show_df = plan_df.copy()
+                    show_df["Leg km"] = show_df.apply(
+                        lambda r: round(
+                            float(r["Distance (km)"]) - (SWIM_DIST_KM if str(r["Leg"]) == "Bike" else (SWIM_DIST_KM + BIKE_DIST_KM)),
+                            1,
+                        ),
+                        axis=1,
+                    )
+                    show_df["Pace (min/km)"] = show_df["Required speed (km/h)"].apply(
+                        lambda v: (f"{(60.0 / float(v)):.2f}" if (pd.notna(v) and float(v) > 0) else "–")
+                    )
+                    show_df = show_df[[
+                        "Split",
+                        "Distance (km)",
+                        "Leg km",
+                        "Leg",
+                        "Segment dist (km)",
+                        "Required speed (km/h)",
+                        "Pace (min/km)",
+                        "Segment time",
+                        "Cumulative time",
+                    ]].copy()
+                    st.dataframe(show_df, use_container_width=True, hide_index=True)
 
         else:
             st.markdown("---")
