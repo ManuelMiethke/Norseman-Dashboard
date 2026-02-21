@@ -88,6 +88,10 @@ GROUP_TEXT_COLORS = {
     GROUP_CRITICAL_40: "#ffffff",
 }
 
+NAMED_COLORS = {
+    "frontier_pace": "#8A2BE2",
+}
+
 DEFAULT_YEARS_WITH_37_5_CUTOFF = {2024, 2025}
 
 
@@ -200,6 +204,10 @@ def get_group_color(group_value: Any, scheme: str = "default", fallback: str = "
 def get_group_text_color(group_value: Any, fallback: str = "#111111") -> str:
     canonical = canonical_group_name(group_value)
     return GROUP_TEXT_COLORS.get(canonical, fallback)
+
+
+def get_named_color(name: str, fallback: str = "#9b9b9b") -> str:
+    return NAMED_COLORS.get(str(name), fallback)
 
 
 def run_cutoff_column_for_year(year_value: Any) -> str:
