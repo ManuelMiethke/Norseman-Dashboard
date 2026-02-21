@@ -19,6 +19,7 @@ RUN_DISTANCE_KM = 42.2
 
 SEGMENT_LABELS = ["Swim", "Bike", "Run"]
 SEGMENT_DISTANCES = [SWIM_DISTANCE_KM, BIKE_DISTANCE_KM, RUN_DISTANCE_KM]
+YEARS_WITH_37_5_CUTOFF = {2024, 2025}
 
 SEGMENT_COLORS = {
     "Swim": "#64b5f6",   
@@ -86,6 +87,63 @@ def format_delta(delta_sec: float) -> str:
     return f"Δ {sign}{seconds_to_hms(abs(delta_sec))}"
 
 
+def _year_uses_37_5_cutoff(year_value) -> bool:
+    """2024/2025 laufen bis 37.5 km Cut-Off, sonst bis 32.5 km."""
+    try:
+        return int(float(year_value)) in YEARS_WITH_37_5_CUTOFF
+    except Exception:
+        return False
+
+
+def _run_cutoff_seconds_for_row(row: pd.Series) -> float:
+    """
+    Berechnet Run-Sekunden bis zum Jahres-Cut-Off:
+    - 2024/2025 -> run_37_5km_stavsro_cut_off_time
+    - sonst     -> run_32_5km_langefonn_time
+    """
+    cutoff_col = (
+        "run_37_5km_stavsro_cut_off_time"
+        if _year_uses_37_5_cutoff(row.get("year"))
+        else "run_32_5km_langefonn_time"
+    )
+
+    run_start_s = time_to_seconds(row.get("run_start_time"))
+    cutoff_s = time_to_seconds(row.get(cutoff_col))
+
+    if np.isnan(run_start_s) or np.isnan(cutoff_s):
+        return np.nan
+
+    delta_s = cutoff_s - run_start_s
+    return delta_s if delta_s >= 0 else np.nan
+
+
+def _apply_run_cutoff(df: pd.DataFrame) -> pd.DataFrame:
+    """Erzeugt die Spalte run_time_cutoff_s (Run-Zeit nur bis Cut-Off)."""
+    df = df.copy()
+    df["run_time_cutoff_s"] = df.apply(_run_cutoff_seconds_for_row, axis=1)
+    return df
+
+
+def _cutoff_run_distance_for_selection(df: pd.DataFrame, selected_year) -> float:
+    """
+    Distanz für den Distance-Chart bei aktiviertem Cut-Off:
+    - Year-Filter gesetzt -> 37.5 km für 2024/2025, sonst 32.5 km
+    - Year=All            -> Mittelwert über vorhandene Jahre im gefilterten DF
+    """
+    if selected_year != "All":
+        return 37.5 if _year_uses_37_5_cutoff(selected_year) else 32.5
+
+    if "year" not in df.columns:
+        return 32.5
+
+    years = pd.to_numeric(df["year"], errors="coerce").dropna().astype(int).unique()
+    if len(years) == 0:
+        return 32.5
+
+    distances = [37.5 if _year_uses_37_5_cutoff(y) else 32.5 for y in years]
+    return float(np.mean(distances))
+
+
 @st.cache_data
 def load_wide_for_timerelations() -> pd.DataFrame:
     """
@@ -110,6 +168,7 @@ def _compute_time_share_for_group(
     group: str,
     ref_black: Optional[dict] = None,
     delta_only: bool = False,
+    run_col: str = "run_time_s",
 ) -> Optional[dict]:
     """
     Berechnet Zeitanteile (in %) und Text für Swim/Bike/Run für:
@@ -139,7 +198,7 @@ def _compute_time_share_for_group(
     # Median statt Mean
     swim_sec = df_group["swim_time_s"].median()
     bike_sec = df_group["bike_time_s"].median()
-    run_sec = df_group["run_time_s"].median()
+    run_sec = df_group[run_col].median()
 
     values = [swim_sec, bike_sec, run_sec]
     if any(np.isnan(v) for v in values):
@@ -301,17 +360,42 @@ across the three Norseman race segments (*Swim, Bike, Run*), split by athlete gr
                 """
             )
 
-    delta_only = st.checkbox("Show Δ compared to Black Shirts", value=False)
+    toggle_col_1, toggle_col_2, _spacer = st.columns([0.9, 0.9, 4.2], gap="small")
+    with toggle_col_1:
+        delta_only = st.checkbox("Show Δ compared to Black Shirts", value=False)
+    with toggle_col_2:
+        cutoff_only = st.checkbox(
+            "Show till Cut-Off Point",
+            value=False,
+        )
+
+    run_time_col = "run_time_s"
+    run_distance_km = RUN_DISTANCE_KM
+    if cutoff_only:
+        required_cutoff_cols = {
+            "year",
+            "run_start_time",
+            "run_32_5km_langefonn_time",
+            "run_37_5km_stavsro_cut_off_time",
+        }
+        if not required_cutoff_cols.issubset(df.columns):
+            df = load_wide_for_timerelations()
+            if selected_year != "All" and "year" in df.columns:
+                df = df[df["year"] == selected_year]
+        df = _apply_run_cutoff(df)
+        run_time_col = "run_time_cutoff_s"
+        run_distance_km = _cutoff_run_distance_for_selection(df, selected_year)
 
     # ----------------------------------------------------------
     # Distance-Kuchen
     # ----------------------------------------------------------
-    total_distance = sum(SEGMENT_DISTANCES)
-    distance_pct = [d / total_distance * 100 for d in SEGMENT_DISTANCES]
+    segment_distances = [SWIM_DISTANCE_KM, BIKE_DISTANCE_KM, run_distance_km]
+    total_distance = sum(segment_distances)
+    distance_pct = [d / total_distance * 100 for d in segment_distances]
 
     distance_text = [
         f"{dist:.1f} km<br>{pct:.1f} %"
-        for dist, pct in zip(SEGMENT_DISTANCES, distance_pct)
+        for dist, pct in zip(segment_distances, distance_pct)
     ]
 
     fig_distance = _create_pie(
@@ -334,7 +418,7 @@ across the three Norseman race segments (*Swim, Bike, Run*), split by athlete gr
         ref_black = {
             "swim": df_black["swim_time_s"].median(),
             "bike": df_black["bike_time_s"].median(),
-            "run": df_black["run_time_s"].median(),
+            "run": df_black[run_time_col].median(),
         }
 
     # ----------------------------------------------------------
@@ -348,6 +432,7 @@ across the three Norseman race segments (*Swim, Bike, Run*), split by athlete gr
             group_name,
             ref_black=ref_black,
             delta_only=delta_only,
+            run_col=run_time_col,
         )
         if result is not None:
             fig = _create_pie(
