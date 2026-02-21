@@ -22,7 +22,7 @@ def render_header():
 <p style='margin:0; color:"white"; font-size:1.0rem;'>
   Explore performances at the Norseman Xtreme Triathlon
   · <a href='https://my.raceresult.com/321377/' target='_blank'>Data</a>
-  · Best viewed on a large display
+  · (Best viewed on a large display)
 </p>
             """,
             unsafe_allow_html=True,
