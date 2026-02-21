@@ -3,6 +3,9 @@ import plotly.graph_objects as go
 import streamlit as st
 from utils.race_logic import get_group_color, is_critical_40_group
 
+HIGHLIGHT_COLOR = "#FFA500"
+HIGHLIGHT_STATE_KEY = "rank_progression_selected_bib"
+
 try:
     import data_store
 except Exception:
@@ -127,6 +130,36 @@ def athlete_in_group(row: pd.Series, group: str) -> bool:
     return True
 
 
+def _extract_selected_bib_from_event(event) -> int | None:
+    """Read selected bib from Streamlit plotly selection event."""
+    if event is None:
+        return None
+
+    selection = None
+    if isinstance(event, dict):
+        selection = event.get("selection")
+    else:
+        selection = getattr(event, "selection", None)
+
+    if selection is None:
+        return None
+
+    points = selection.get("points", []) if isinstance(selection, dict) else getattr(selection, "points", [])
+    if not points:
+        return None
+
+    for p in points:
+        custom = p.get("customdata") if isinstance(p, dict) else getattr(p, "customdata", None)
+        if custom is None:
+            continue
+        try:
+            bib_raw = custom[0] if isinstance(custom, (list, tuple)) else custom
+            return int(float(bib_raw))
+        except Exception:
+            continue
+    return None
+
+
 # --------------------------------------------------
 # Figure
 # --------------------------------------------------
@@ -134,7 +167,8 @@ def create_rank_progression_figure(
     df_year: pd.DataFrame,
     year_int: int,
     group: str,
-) -> go.Figure:
+    highlight_bib: int | None = None,
+) -> tuple[go.Figure, pd.DataFrame]:
     structure = race_structure_for_year(year_int)
     cutoff_km = structure["run_end"]
     cutoff_tol_km = 0.2
@@ -156,7 +190,7 @@ def create_rank_progression_figure(
             showarrow=False,
             font=dict(size=14, color="#FFFFFF"),
         )
-        return fig
+        return fig, pd.DataFrame(columns=["bib", "name"])
 
     # Keep only athletes that actually reached the cut-off distance.
     max_dist_per_bib = (
@@ -187,7 +221,7 @@ def create_rank_progression_figure(
             showarrow=False,
             font=dict(size=14, color="#FFFFFF"),
         )
-        return fig
+        return fig, pd.DataFrame(columns=["bib", "name"])
 
     # last rank at cutoff per athlete
     last_rows = (
@@ -226,13 +260,22 @@ def create_rank_progression_figure(
         if df_a.empty:
             continue
 
+        is_highlighted = highlight_bib is not None and bib == highlight_bib
+        has_highlight = highlight_bib is not None
+        line_color = HIGHLIGHT_COLOR if is_highlighted else r["color"]
+        line_width = 3.2 if is_highlighted else 1.4
+        line_opacity = 1.0 if (is_highlighted or not has_highlight) else 0.25
+
         fig.add_trace(
             go.Scatter(
                 x=df_a["race_distance_km"],
                 y=df_a["split_rank"],
-                mode="lines",
+                mode="lines+markers",
                 name=label,
-                line=dict(width=1.4, color=r["color"]),
+                line=dict(width=line_width, color=line_color),
+                marker=dict(size=6, color=line_color, opacity=0.25),
+                opacity=line_opacity,
+                customdata=[[bib]] * len(df_a),
                 showlegend=False,
                 hovertemplate=f"{label}<br>km %{{x:.1f}}<br>rank %{{y}}<extra></extra>",
             )
@@ -297,12 +340,19 @@ def create_rank_progression_figure(
         paper_bgcolor="#7A7A7A",
         plot_bgcolor="#7A7A7A",
         font=dict(color="#FFFFFF"),
+        clickmode="event+select",
+        dragmode="select",
         showlegend=False,
         height=650,
         margin=dict(l=40, r=20, t=20, b=40),
     )
 
-    return fig
+    selection_df = summary.loc[:, ["bib", "name"]].copy()
+    selection_df["label"] = selection_df.apply(
+        lambda r: f"{str(r['name']).strip()} (#{int(r['bib'])})" if str(r.get("name", "")).strip() else f"#{int(r['bib'])}",
+        axis=1,
+    )
+    return fig, selection_df
 
 
 # --------------------------------------------------
@@ -353,13 +403,52 @@ Total: **{structure["run_end"]:.1f} km**
         st.warning(f"No data for year {year_int}.")
         return
 
-    fig = create_rank_progression_figure(
+    fig, selection_df = create_rank_progression_figure(
         df_year=df_year,
         year_int=year_int,
         group=group,
+        highlight_bib=st.session_state.get(HIGHLIGHT_STATE_KEY),
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    event = st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key="rank_progression_all_athletes_chart",
+        on_select="rerun",
+        selection_mode="points",
+    )
+
+    selected_bib = _extract_selected_bib_from_event(event)
+    current_bib = st.session_state.get(HIGHLIGHT_STATE_KEY)
+    if selected_bib is not None and selected_bib != current_bib:
+        st.session_state[HIGHLIGHT_STATE_KEY] = selected_bib
+        st.rerun()
+
+    if not selection_df.empty:
+        bib_to_label = dict(zip(selection_df["bib"], selection_df["label"]))
+        selected_options = ["None"] + list(selection_df["label"])
+        current_label = bib_to_label.get(current_bib, "None")
+        picked_label = st.selectbox(
+            "Highlight athlete",
+            selected_options,
+            index=selected_options.index(current_label) if current_label in selected_options else 0,
+            key="rank_progression_highlight_selectbox",
+        )
+        if picked_label == "None":
+            if current_bib is not None:
+                st.session_state.pop(HIGHLIGHT_STATE_KEY, None)
+                st.rerun()
+        else:
+            label_to_bib = {v: k for k, v in bib_to_label.items()}
+            picked_bib = label_to_bib.get(picked_label)
+            if picked_bib is not None and picked_bib != current_bib:
+                st.session_state[HIGHLIGHT_STATE_KEY] = int(picked_bib)
+                st.rerun()
+
+    if st.session_state.get(HIGHLIGHT_STATE_KEY) is not None:
+        if st.button("Clear athlete highlight", key="rank_progression_clear_highlight"):
+            st.session_state.pop(HIGHLIGHT_STATE_KEY, None)
+            st.rerun()
 
 
 if __name__ == "__main__":
