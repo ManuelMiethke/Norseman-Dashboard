@@ -10,7 +10,7 @@ def render_header():
     year_options = ["All", 2025, 2024, 2022, 2021, 2019, 2018]
     group_options = ["All", "Top 10", "Black Shirt", "White Shirt", GROUP_CRITICAL_40, "DNF"]
 
-    col_title, col_year, col_group, col_logo = st.columns([4, 1.3, 1.5, 1])
+    col_title, col_source, col_year, col_group, col_logo = st.columns([3.7, 0.5, 1.3, 1.5, 1])
 
     with col_title:
         st.markdown(
@@ -18,6 +18,21 @@ def render_header():
             unsafe_allow_html=True
         )
         st.caption("Explore performances at the Norseman Xtreme Triathlon")
+
+    with col_source:
+        with st.popover("📊"):
+            st.markdown(
+                """
+**Data sources (RaceResults):**
+
+- [2018](https://my.raceresult.com/100840/)
+- [2019](https://my.raceresult.com/108938/)
+- [2021](https://my.raceresult.com/164078/results)
+- [2022](https://my.raceresult.com/210752/results)
+- [2024](https://my.raceresult.com/298522/results)
+- [2025](https://my.raceresult.com/321377/)
+                """
+            )
 
     with col_year:
         st.markdown('<p class="filter-label">Year</p>', unsafe_allow_html=True)

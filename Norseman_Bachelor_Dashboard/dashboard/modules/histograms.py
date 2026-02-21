@@ -367,10 +367,13 @@ def create_histogram(
         zerolinecolor="#c7c7c7",
     )
 
-    # Median-Linie für Relative-Skala (0 %)
-    if scale_mode == "Relative (% vs median)":
+    # Median-Linie in allen Ansichten:
+    # - Relative: 0%
+    # - Absolute / Bike-Time-scale: Medianzeit in Sekunden
+    median_x = 0.0 if scale_mode == "Relative (% vs median)" else float(df["_seconds"].median())
+    if math.isfinite(median_x):
         fig.add_vline(
-            x=0,
+            x=median_x,
             line=dict(
                 color="orange",
                 width=2,
